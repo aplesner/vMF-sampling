@@ -69,7 +69,7 @@ def main():
     mu = np.zeros(2000)
     mu[-1] = 1.0  # Mean direction (unit vector)
     kappa = 10.0  # Concentration parameter
-    n = 1000  # Number of samples
+    n = 4000  # Number of samples
 
     # Benchmark the sampling methods
     benchmark_sampling_methods(mu, kappa, n)
@@ -83,7 +83,7 @@ def profile_implementation():
     mu = np.zeros(1500)
     mu[-1] = 1.0  # Mean direction (unit vector)
     kappa = 10.0  # Concentration parameter
-    n = 1000  # Number of samples
+    n = 2000  # Number of samples
     # pr = cProfile.Profile(subcalls=False, builtins=False)
     # pr.enable()
     

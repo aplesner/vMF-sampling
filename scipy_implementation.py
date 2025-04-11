@@ -5,6 +5,7 @@ from tqdm import tqdm
 
 import line_profiler
 
+
 def _check_random_state(seed):
     assert seed is None or isinstance(seed, (int, np.integer)), (
         f"seed must be None or an integer, got {type(seed)}"
@@ -14,7 +15,6 @@ def _check_random_state(seed):
         return np.random
     else:
         return np.random.RandomState(seed)
-    
 
 
 def _sample_uniform_direction(dim, size, random_state):
@@ -48,18 +48,14 @@ def _rotate_samples(samples, mu, dim):
     base_point = np.zeros((dim, ))
     base_point[0] = 1.
     embedded = np.concatenate([mu[None, :], np.zeros((dim - 1, dim))])
-    rotmatrix, _ = np.linalg.qr(np.transpose(embedded)) # This line is responsible for 74% of the time
+    rotmatrix, _ = np.linalg.qr(np.transpose(embedded)) # This line is responsible for 56% of the time
     if np.allclose(np.matmul(rotmatrix, base_point[:, None])[:, 0], mu):
         rotsign = 1
     else:
         rotsign = -1
 
     # apply rotation (this is a matrix multiplication)
-    # samples_new = np.einsum('ij,...j->...i', rotmatrix, samples) * rotsign # This line is responsible for 26% of the time
-    print(rotmatrix.shape, samples.shape)
-    samples2 = np.matvec(rotmatrix, samples) * rotsign
-    # check if the rotation worked
-    # assert np.allclose(samples2, samples_new), "Rotation failed"
+    samples2 = np.matvec(rotmatrix, samples) * rotsign # This line is responsible for 43% of the time
     return samples2
 
 # @line_profiler.profile
@@ -153,7 +149,7 @@ def sample_vMF(mu: np.array, kappa: float, n: int) -> np.ndarray:
     else:
         samples = np.squeeze(samples)
 
-    samples = _rotate_samples(samples, mu, dim) # This line is responsible for 99% of the time
+    samples = _rotate_samples(samples, mu, dim) # This line is responsible for 81% of the time
     return samples
 
 def profile_implementation():
@@ -164,7 +160,7 @@ def profile_implementation():
     mu = np.zeros(1500)
     mu[-1] = 1.0  # Mean direction (unit vector)
     kappa = 10.0  # Concentration parameter
-    n = 1000  # Number of samples
+    n = 15000  # Number of samples
     # pr = cProfile.Profile(subcalls=False, builtins=False)
     # pr.enable()
     
@@ -180,3 +176,8 @@ def profile_implementation():
     
 if __name__ == "__main__":
     profile_implementation()
+
+
+# 2500 from 1500: 1.67x
+# 576765.3 from 200061.2: 2.88x
+# 1724671.8 from 114622.8: 15.05x
