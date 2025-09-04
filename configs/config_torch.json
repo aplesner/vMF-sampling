@@ -1,0 +1,10 @@
+{
+  "mu_dim": 1024,
+  "kappa": 15.0,
+  "num_samples": 5000,
+  "implementation": "torch",
+  "seed": 123,
+  "benchmark": true,
+  "profile": true,
+  "output_file": "vmf_results_torch.csv"
+}
