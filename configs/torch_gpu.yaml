@@ -1,0 +1,4 @@
+# PyTorch GPU implementation configuration
+mu_dim: 512
+implementation: "torch"
+device: "cuda"

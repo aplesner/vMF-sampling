@@ -11,10 +11,10 @@ from .vmf_sampler import vMF, Implementation
 from .config import VMFConfig
 
 # Global benchmark time setting
-BENCHMARK_TIME = 1.0
+BENCHMARK_TIME = 2.0
 
 
-def run_benchmark(config: VMFConfig) -> Dict[str, float]:
+def run_benchmark(config: VMFConfig) -> Dict[str, float|str]:
     """
     Run benchmarking using torch.utils.benchmark.
     
@@ -61,7 +61,7 @@ def run_benchmark(config: VMFConfig) -> Dict[str, float]:
     timer = benchmark.Timer(
         stmt='sample_func()',
         globals={'sample_func': sample_func},
-        label=f'vMF sampling ({config.implementation.value})',
+        label=f'vMF sampling ({config.implementation})',
         description=f'dim={config.mu_dim}, kappa={config.kappa}, n={config.num_samples}'
     )
 
@@ -73,5 +73,6 @@ def run_benchmark(config: VMFConfig) -> Dict[str, float]:
         'mean_time': measurement.mean,
         'median_time': measurement.median,
         'std': float(np.std(measurement.raw_times)),
+        'iterations per second': len(measurement.times) / BENCHMARK_TIME,
         'device': device
     }
