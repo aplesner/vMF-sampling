@@ -1,0 +1,4 @@
+# PyTorch implementation configuration
+mu_dim: 1024
+implementation: "torch"
+device: "auto"

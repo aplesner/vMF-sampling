@@ -15,7 +15,7 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from src import VMFConfig, run_benchmark, run_profiling, VMFLogger
+from src import VMFConfig, run_benchmark, VMFLogger
 
 # Load environment variables from .env file if it exists
 def load_env_file(env_file: str = ".env"):
@@ -39,18 +39,12 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python run_experiment.py configs/config_numpy.json
-  python run_experiment.py configs/config_torch.json --wandb-project my-vmf-project
-  python run_experiment.py configs/config_scipy.json --wandb-entity my-team
+  python run_experiment.py --config configs/numpy.yaml
         """
     )
     
-    parser.add_argument('config', 
-                       help='Path to JSON configuration file')
-    parser.add_argument('--wandb-project', 
-                       help='wandb project name (optional)')
-    parser.add_argument('--wandb-entity',
-                       help='wandb entity/team name (optional)')
+    parser.add_argument('--config', 
+                       help='Path to configuration file (JSON or YAML)')
     parser.add_argument('--env-file', 
                        default='.env',
                        help='Path to environment file (default: .env)')
@@ -60,121 +54,63 @@ Examples:
     # Load environment variables
     load_env_file(args.env_file)
     
-    # Load configuration
-    try:
-        config = VMFConfig.from_json(args.config)
+    # Load base.yaml configuration
+    config = VMFConfig.from_yaml('configs/base.yaml')
+
+    # If additional config file is provided, load and override
+    if args.config:
+        config_path = Path(args.config)
+        if config_path.suffix.lower() in ['.yaml', '.yml']:
+            config = config.from_yaml(args.config)
+        elif config_path.suffix.lower() == '.json':
+            config = config.from_json(args.config)
+        else:
+            raise ValueError(f"Configuration file must be .json or .yaml but got {config_path.suffix}")
+
         print(f"Loaded configuration from {args.config}")
-    except Exception as e:
-        print(f"Error loading configuration: {e}")
-        sys.exit(1)
+
     
     # Initialize logger
-    logger = VMFLogger(
-        config.output_file, 
-        args.wandb_project,
-        args.wandb_entity
-    )
-    logger.set_offline_mode(config.offline)
-    
-    # Get dimensions and implementations to loop over
-    dimensions = config.get_dimensions()
-    implementations = config.implementations
-    
-    total_experiments = len(dimensions) * len(implementations)
-    current_experiment = 0
-    
+    logger = VMFLogger(config=config)
+
     print("=" * 60)
-    print("vMF Sampling Experiment Suite")
+    print("vMF Sampling Experiment")
     print("=" * 60)
     print(f"Configuration:")
-    print(f"  Dimensions: {dimensions}")
+    print(f"  Dimension: {config.mu_dim}")
     print(f"  Kappa: {config.kappa}")
     print(f"  Samples: {config.num_samples}")
-    print(f"  Implementations: {[impl.value for impl in implementations]}")
+    print(f"  Implementation: {config.implementation}")
     print(f"  Seed: {config.seed}")
     print(f"  Device: {config.device}")
-    print(f"  Output file: {config.output_file}")
-    print(f"  Benchmark: {config.benchmark}")
-    print(f"  Profile: {config.profile}")
-    print(f"  Offline mode: {config.offline}")
-    print(f"  Total experiments: {total_experiments}")
+    print(f"  W&B Project: {config.wandb_project}")
+    print(f"  W&B Offline: {config.wandb_offline}")
     
-    # Loop over all combinations
-    for dim in dimensions:
-        for impl in implementations:
-            current_experiment += 1
-            print(f"\n{'='*60}")
-            print(f"Experiment {current_experiment}/{total_experiments}: dim={dim}, impl={impl.value}")
-            print(f"{'='*60}")
-            
-            # Create a temporary config for this specific experiment
-            temp_config = VMFConfig({
-                'mu_dim': dim,
-                'kappa': config.kappa,
-                'num_samples': config.num_samples,
-                'implementation': impl.value,
-                'seed': config.seed,
-                'benchmark': config.benchmark,
-                'profile': config.profile,
-                'output_file': config.output_file,
-                'device': config.device,
-                'offline': config.offline
-            })
-            
-            # Run benchmark
-            timing_results = {}
-            if temp_config.benchmark:
-                print("Running Benchmarks...")
-                try:
-                    timing_results = run_benchmark(temp_config)
-                    print(f"✓ Mean time: {timing_results['mean_time']:.6f}s")
-                    print(f"✓ Median time: {timing_results['median_time']:.6f}s")
-                    print(f"✓ Std dev: {timing_results['std']:.6f}s")
-                    print(f"✓ Device: {timing_results['device']}")
-                except Exception as e:
-                    print(f"✗ Benchmark failed: {e}")
-                    timing_results = {'benchmark_error': str(e)}
-            
-            # Run profiling
-            profile_results = {}
-            if temp_config.profile:
-                print("Running Detailed Profiling...")
-                try:
-                    profile_results = run_profiling(temp_config)
-                    print(f"✓ Total profiled time: {profile_results.get('total_time', 0):.6f}s")
-                    print(f"✓ Total function calls: {profile_results.get('total_calls', 0)}")
-                    
-                    # Print time breakdown
-                    if 'time_breakdown' in profile_results:
-                        breakdown = profile_results['time_breakdown']
-                        print(f"✓ Time breakdown:")
-                        print(f"  - Sampling: {breakdown.get('sampling_percentage', 0):.1f}%")
-                        print(f"  - Rotation: {breakdown.get('rotation_percentage', 0):.1f}%")
-                        print(f"  - Other: {breakdown.get('other_percentage', 0):.1f}%")
-                        
-                except Exception as e:
-                    print(f"✗ Profiling failed: {e}")
-                    profile_results = {'profiling_error': str(e)}
-            
-            # Log results
-            try:
-                logger.log_experiment(temp_config, timing_results, profile_results)
-                print(f"✓ Results logged for dim={dim}, impl={impl.value}")
-            except Exception as e:
-                print(f"✗ Logging failed: {e}")
+    print(f"{'='*60}")
     
-    # Finish logging
-    print("\n" + "=" * 60)
-    print("Finalizing Results...")
-    print("=" * 60)
+    print("Running Benchmarks...")
+    timing_results = {}
+    
+    timing_results = run_benchmark(config)
+    print(f"✓ Mean time: {timing_results['mean_time']:.6f}s")
+    print(f"✓ Median time: {timing_results['median_time']:.6f}s")
+    print(f"✓ Std dev: {timing_results['std']:.6f}s")
+    print(f"✓ Device: {timing_results['device']}")
+    # except Exception as e:
+    #     print(f"✗ Benchmark failed: {e}")
+    #     timing_results = {}
+    
+    # Log results
     try:
-        logger.finish()
-        print(f"✓ All results logged successfully")
+        logger.log_experiment(config, timing_results)
+        print(f"✓ Results logged successfully")
     except Exception as e:
-        print(f"✗ Final logging failed: {e}")
+        print(f"✗ Logging failed: {e}")
+    
+    logger.finish()
     
     print("\n" + "=" * 60)
-    print("Experiment Suite Complete!")
+    print("Experiment Complete!")
     print("=" * 60)
 
 

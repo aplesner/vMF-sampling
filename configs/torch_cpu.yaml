@@ -1,0 +1,4 @@
+# PyTorch CPU implementation configuration
+mu_dim: 512
+implementation: "torch"
+device: "cpu"

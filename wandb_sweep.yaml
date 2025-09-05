@@ -1,0 +1,47 @@
+# W&B Sweep Configuration for vMF Sampling
+# This sweep explores different dimensions and implementations
+
+method: grid
+
+parameters:
+  # Sweep over dimensions
+  mu_dim:
+    values: [3, 16, 64, 256, 512, 1024]
+    
+  # Sweep over implementations
+  implementation:
+    values: ["numpy", "scipy", "torch"]
+    
+  # Sweep over device types (torch will use both cpu/cuda, others ignore)
+  device:
+    value: "auto"
+  #   values: ["auto", "cpu", "cuda"]
+    
+  # Vary concentration parameter
+  kappa:
+    value: 10.0
+  #   values: [1.0, 5.0, 10.0, 20.0]
+    
+  # Fixed parameters for consistency
+  num_samples:
+    value: 2000
+    
+  seed:
+    value: 42
+    
+  wandb_offline:
+    value: false
+
+# Sweep settings
+name: "vmf-sampling-comprehensive"
+description: "Comprehensive sweep over vMF sampling implementations, dimensions, and devices"
+
+# Optimize for mean benchmark time (faster is better)
+metric:
+  name: "benchmark/mean_time"
+  goal: minimize
+
+# Stop conditions
+early_terminate:
+  type: hyperband
+  min_iter: 1
