@@ -2,8 +2,8 @@ dimension: 8000
 num_samples: 2000
 kappa: 10.0
 output_dir: "data_samples/"
-implementation: "numpy"
-random_mean_direction: true
+implementation: "torch"
+random_mean_direction: false
 device: "auto"
 seed: 1
 verbosity: "debug"
