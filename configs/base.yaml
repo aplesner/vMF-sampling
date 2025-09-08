@@ -2,7 +2,7 @@
 # This file contains default values that can be overridden
 
 # Experiment settings
-mu_dim: 3  # Dimension of mu (must be >= 2)
+dimension: 3  # Dimension of mu (must be >= 2)
 kappa: 1.0  # Concentration parameter (must be positive)
 num_samples: 1000  # Number of samples to generate (must be positive)
 implementation: "numpy"  # Implementation: 'scipy', 'numpy', 'torch'
@@ -15,4 +15,7 @@ device: "auto"  # Torch device ('cpu', 'cuda', 'auto')
 
 # Weights & Biases settings
 wandb_project: "vmf-sampling"  # W&B project name
-wandb_offline: true  # Whether to run wandb in offline mode
+wandb_offline: false  # Whether to run wandb in offline mode
+
+# Logging settings
+verbosity: "info"  # Logging verbosity level: 'debug', 'info', 'warning', 'error'

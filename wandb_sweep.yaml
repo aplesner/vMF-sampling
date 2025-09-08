@@ -2,11 +2,17 @@
 # This sweep explores different dimensions and implementations
 
 method: grid
+program: run_sweep.py
+
+# Sweep settings
+project: "vmf-sampling"
+name: "vmf-sampling-comprehensive"
+description: "Comprehensive sweep over vMF sampling implementations, dimensions, and devices"
 
 parameters:
   # Sweep over dimensions
-  mu_dim:
-    values: [3, 16, 64, 256, 512, 1024]
+  dimension:
+    values: [256, 512, 1024, 2048, 4096, 8192, 16384]
     
   # Sweep over implementations
   implementation:
@@ -27,21 +33,14 @@ parameters:
     value: 2000
     
   seed:
-    value: 42
+    values: [1, 2, 3] 
     
-  wandb_offline:
-    value: false
-
-# Sweep settings
-name: "vmf-sampling-comprehensive"
-description: "Comprehensive sweep over vMF sampling implementations, dimensions, and devices"
-
 # Optimize for mean benchmark time (faster is better)
 metric:
   name: "benchmark/mean_time"
   goal: minimize
 
-# Stop conditions
-early_terminate:
-  type: hyperband
-  min_iter: 1
+command:
+  - python3
+  - run_sweep.py
+  - ${env_vars:VERBOSE=0,WANDB_QUIET=true}

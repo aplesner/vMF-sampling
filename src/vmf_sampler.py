@@ -8,7 +8,10 @@ This module contains the core vMF sampling class with support for multiple backe
 import numpy as np
 import torch
 from enum import Enum
+import logging
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class Implementation(Enum):
     """Enum for different vMF sampling implementations."""
@@ -77,19 +80,27 @@ class vMF:
     >>> mu = mu / torch.norm(mu)  # normalize to unit vector
     >>> samples = sampler.sample(10000, mu=mu)
     """
-    
-    def __init__(self, dim: int, kappa: float, seed: int|None = None, 
-                 device: str|torch.device|None = None, dtype: torch.dtype|None = None, 
+
+    def __init__(self, dim: int, mu: np.ndarray | torch.Tensor | None = None, rotation_needed: bool = True, kappa: float = 10.0, seed: int | None = None,
+                 device: str | torch.device | None = None, dtype: torch.dtype | None = None,
                  use_scipy_implementation: bool = False):
 
+        assert dim > 1, "dim must be greater than 1"
+        assert kappa > 0, "kappa must be positive"
         self.dim = dim
         self.kappa = kappa
         self.seed = seed
         if device is not None:
             if isinstance(device, str):
-                self.device = torch.device(device)
-            else:
+                if device == 'auto':
+                    logger.debug("Auto-selecting device: %s", "cuda" if torch.cuda.is_available() else "cpu")
+                    self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                else:
+                    self.device = torch.device(device)
+            elif isinstance(device, torch.device):
                 self.device = device
+            else:
+                self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -99,8 +110,11 @@ class vMF:
 
         self.rotmatrix = None
         self.rotsign = None
-        self.mu = None
         self.random_state = self._random_state(seed)
+        self.rotation_needed = rotation_needed
+        self.mu = None
+        if mu is not None:
+            self.set_mu(mu)
 
     def set_seed(self, seed: int | None):
         """
@@ -297,14 +311,29 @@ class vMF:
                 return self._rotate_samples_scipy(samples_numpy)
 
     def set_mu(self, mu: np.ndarray | torch.Tensor):
-        """Set the mean direction and recompute rotation matrix."""
+        """Set the mean direction and recompute rotation matrix if needed."""
+        self._verify_mu(mu)
         self.mu = mu
         self.rotmatrix = None
         self.rotsign = None
-        self.compute_rotation_matrix()
+        self.dim = mu.shape[0]
+        # mu[0] is 1 then rotation is identity otherwise rotation is needed
+        if isinstance(mu, torch.Tensor) and torch.isclose(mu[0], torch.tensor(1.0)):
+            self.rotation_needed = False
+            logger.debug("Rotation not needed for mu.")
+        elif isinstance(mu, np.ndarray) and np.isclose(mu[0], 1.0):
+            self.rotation_needed = False
+            logger.debug("Rotation not needed for mu.")
+        else:
+            self.rotation_needed = True
+            logger.debug("Rotation needed for mu.")
+
+        if self.rotation_needed:
+            self.compute_rotation_matrix()
 
     def set_kappa(self, kappa: float):
         """Set the concentration parameter."""
+        assert kappa > 0, "kappa must be positive"
         self.kappa = kappa
 
     def _random_state(self, seed: int | None):
@@ -338,13 +367,13 @@ class vMF:
         samples /= np.linalg.norm(samples, axis=-1, keepdims=True)
         return samples
 
-    def sample(self, num_samples: int, mu: np.ndarray | torch.Tensor | None = None, 
+    def sample(self, num_samples: int, mu: np.ndarray | torch.Tensor | None = None, rotation_needed: bool = True,
                kappa: float | None = None) -> np.ndarray | torch.Tensor:
         """
         Sample from the von Mises-Fisher distribution.
         
         Generates samples from the vMF distribution using rejection sampling with
-        efficient rotation. The implementation is based on Ulrich (1984) and Wood (1994).
+        efficient rotation. The implementation is based on SciPy's implementation.
         
         Parameters
         ----------
@@ -382,21 +411,22 @@ class vMF:
         """
         # Sample from the vMF distribution
         if mu is not None:
+            logger.debug("Setting mu for sampling.")
+            self.rotation_needed = rotation_needed
             self.set_mu(mu)
         elif self.mu is None:
-            raise ValueError("Must provide mu either as an argument or during initialization.")
-
-        assert self.mu is not None, "mu must be set before sampling"
+            logger.debug("mu is unset but will be set to default [1, 0, ..., 0]. Rotation is then identity and will be skipped.")
+            mu = np.zeros(self.dim)
+            mu[0] = 1.0
+            self.set_mu(mu)
+            self.rotation_needed = False
+        else:
+            logger.debug("Using existing mu for sampling.")
 
         if kappa is not None:
             self.set_kappa(kappa)
-        assert self.kappa > 0, "kappa must be positive"
 
-        dim = self.mu.shape[0]
-        assert dim > 1, "dim must be greater than 1"
-        assert self.kappa > 0, "kappa must be positive"
-        # check if mu is a unit vector
-        assert np.isclose(np.linalg.norm(self.mu), 1), "mu must be a unit vector"
+        dim = self.dim
 
         dim_minus_one = dim - 1
         # calculate number of requested samples
@@ -454,5 +484,9 @@ class vMF:
             samples = samples.reshape(tuple(num_samples) + (dim, ))
 
         # Rotate samples using the class rotation method
-        samples = self.rotate_samples(samples)
+        if self.rotation_needed:
+            logger.debug("Rotating samples to align with mu.")
+            samples = self.rotate_samples(samples)
+        else:
+            logger.debug("Skipping rotation of samples.")
         return samples
