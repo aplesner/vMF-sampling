@@ -68,7 +68,7 @@ Configuration files are JSON format with the following parameters:
 
 ```json
 {
-  "mu_dim": 512,              // Dimension of the sphere
+  "dimension": 512,              // Dimension of the sphere
   "kappa": 10.0,              // Concentration parameter
   "num_samples": 1000,        // Number of samples to generate
   "implementation": "torch",   // "numpy", "torch", or "scipy"

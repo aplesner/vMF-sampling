@@ -59,7 +59,7 @@ class DetailedProfiler:
         """Profile the sampling process with detailed analysis."""
         # Create mean direction
         np.random.seed(self.config.seed)
-        mu = np.random.randn(self.config.mu_dim)
+        mu = np.random.randn(self.config.dimension)
         mu = mu / np.linalg.norm(mu)
         
         # Determine device for torch
@@ -70,7 +70,7 @@ class DetailedProfiler:
         
         # Initialize sampler
         sampler = vMF(
-            dim=self.config.mu_dim,
+            dim=self.config.dimension,
             kappa=self.config.kappa,
             seed=self.config.seed,
             device=device,

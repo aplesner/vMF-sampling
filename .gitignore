@@ -3,6 +3,9 @@
 
 # Results and outputs
 results/
+data_samples/*.npy
+data_samples/*.npz
+data_samples/*.pt
 *.csv
 
 # Python cache

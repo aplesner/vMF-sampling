@@ -77,7 +77,7 @@ Examples:
     print("vMF Sampling Experiment")
     print("=" * 60)
     print(f"Configuration:")
-    print(f"  Dimension: {config.mu_dim}")
+    print(f"  Dimension: {config.dimension}")
     print(f"  Kappa: {config.kappa}")
     print(f"  Samples: {config.num_samples}")
     print(f"  Implementation: {config.implementation}")

@@ -30,7 +30,7 @@ def run_benchmark(config: VMFConfig) -> Dict[str, float|str]:
     """
     # Create mean direction
     np.random.seed(config.seed)
-    mu = np.random.randn(config.mu_dim)
+    mu = np.random.randn(config.dimension)
     mu = mu / np.linalg.norm(mu)
     
     # Determine device for torch
@@ -41,7 +41,7 @@ def run_benchmark(config: VMFConfig) -> Dict[str, float|str]:
     
     # Initialize sampler
     sampler = vMF(
-        dim=config.mu_dim,
+        dim=config.dimension,
         kappa=config.kappa,
         seed=config.seed,
         device=device,
@@ -62,7 +62,7 @@ def run_benchmark(config: VMFConfig) -> Dict[str, float|str]:
         stmt='sample_func()',
         globals={'sample_func': sample_func},
         label=f'vMF sampling ({config.implementation})',
-        description=f'dim={config.mu_dim}, kappa={config.kappa}, n={config.num_samples}'
+        description=f'dim={config.dimension}, kappa={config.kappa}, n={config.num_samples}'
     )
 
     measurement = timer.blocked_autorange(

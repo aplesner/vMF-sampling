@@ -7,6 +7,8 @@ except ImportError:
 
 from .config import VMFConfig
 
+LOGGING_FORMAT='%(filename)s:%(lineno)d - %(asctime)s - %(levelname)s - %(message)s'
+
 
 class VMFLogger:
     """Logger for vMF sampling experiments with CSV output and wandb compatibility."""
@@ -52,7 +54,7 @@ class VMFLogger:
             Dictionary with timing results.
         """
         result = {
-            'dimension': config.mu_dim,  # Use 'dimension' for clearer plotting
+            'dimension': config.dimension,  # Use 'dimension' for clearer plotting
             'mean_runtime': timing_results.get('mean_time', None),  # Explicit mean runtime
             'median_runtime': timing_results.get('median_time', None),
             'std_runtime': timing_results.get('std', None),
