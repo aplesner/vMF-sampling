@@ -41,6 +41,7 @@ def main(config: VMFConfig):
 
     set_seed(config.seed or 42)
     
+    # TODO: add support for torch implementation and device handling
     sampler = vMF(
         dim=config.dimension,
         rotation_needed=False,
