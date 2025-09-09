@@ -3,7 +3,7 @@ num_samples: 2000
 kappa: 10.0
 output_dir: "data_samples/"
 implementation: "torch"
-dtype: "float16"
+dtype: "float32"
 random_mean_direction: true
 device: "auto"
 seed: 1

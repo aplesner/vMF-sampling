@@ -1,5 +1,5 @@
 .git
-data/
+data_samples/
 results/
 models/
 __pycache__/
@@ -7,3 +7,4 @@ __pycache__/
 *.sif
 .ignore_for_code_sync
 *.tar.gz
+wandb/

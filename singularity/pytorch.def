@@ -1,5 +1,5 @@
 Bootstrap: docker
-From: pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel
+From: pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
 
 %post
     apt-get update
@@ -7,8 +7,6 @@ From: pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel
     pip3 install --no-cache-dir --upgrade pip
     pip3 install --no-cache-dir \
         pytorch_lightning \
-        wandb 
-
-    export TORCH_CUDA_ARCH_LIST="7.5;8.0;8.6"  
-    pip3 install --no-cache-dir flash-attn --no-build-isolation
+        wandb \
+        pydantic
 

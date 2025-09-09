@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Check if project_variables.sh is sourced
-if [ "${PROJECT_NAME}" != "flash-attention-benchmark" ]; then
+if [ "${PROJECT_NAME}" != "vMF-sampling" ]; then
     echo "project_variables.sh is not sourced"
     exit 1
 fi
