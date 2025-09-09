@@ -57,7 +57,7 @@ def main(config: VMFConfig):
             logging.debug(f"Converting mu to torch tensor of dtype {config.dtype}")
             dtype = getattr(torch, config.dtype)
             mu = torch.from_numpy(mu).to(dtype=dtype)
-            if config.device == 'cuda' and torch.cuda.is_available():
+            if sampler.device.type == 'cuda':
                 logging.debug("Moving mu to CUDA device")
                 mu = mu.cuda()
         sampler.set_mu(mu)

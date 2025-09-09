@@ -1,13 +1,13 @@
 dimension: 4000
 num_samples: 2000
 kappa: 10.0
-output_dir: "data_samples/"
+output_dir: "/scratch/aplesner/data_samples/"
 implementation: "torch"
-dtype: "float32"
+dtype: "float16"
 random_mean_direction: true
 device: "auto"
 seed: 1
-verbosity: "debug"
+verbosity: "info"
 wandb_project: "vmf-estimation"
 wandb_offline: false
 

@@ -1,7 +1,4 @@
-#!/usr/bin/env python3
-"""
-W&B Sweep script for vMF sampling experiments.
-"""
+import logging
 
 import os
 import sys
@@ -11,18 +8,30 @@ import wandb
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from src import VMFConfig, run_benchmark, VMFLogger
+from src import VMFConfig, run_benchmark
 
 
-verbose = os.getenv('VERBOSE', False) in ['1', 'true', 'True', 'TRUE']
+def setup_logging(level: str) -> None:
+    """Configure root logger for the entire application."""
+
+    format_string = "%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s - %(message)s"
+
+    logging_level = getattr(logging, level.upper(), logging.INFO)
+
+    logging.basicConfig(
+        level=logging_level,
+        format=format_string,
+        datefmt="%Y-%m-%d %H:%M:%S",
+        force=True
+    )
+
 
 def objective(config: dict):
     """Run vMF sampling experiment with given config parameters."""
     
     # Filter invalid combinations (torch-specific device settings)
     if config['implementation'] != 'torch' and config['device'] in ['cuda']:
-        if verbose:
-            print(f"Skipping invalid combination: {config['implementation']} with {config['device']}")
+        logging.debug(f"Skipping invalid combination: {config['implementation']} with {config['device']}")
         wandb.log({"status": "skipped", "reason": "invalid_device_combination"})
         return None
     elif config['implementation'] == 'torch':
@@ -35,21 +44,18 @@ def objective(config: dict):
     try:
         vmf_config = VMFConfig(**config)
     except Exception as e:
-        if verbose:
-            print(f"✗ Error creating config with sweep parameters: {e}")
+        logging.debug(f"✗ Error creating config with sweep parameters: {e}")
         wandb.log({"status": "error", "error": str(e)})
         return None
 
-    if verbose:
-        print("Running Benchmark...")
+    logging.debug("Running Benchmark...")
     try:
         timing_results = run_benchmark(vmf_config)
         # if verbose debug, print full timing results
-        if verbose:
-            print(f"✓ Mean time: {timing_results['mean_time']:.6f}s")
-            print(f"✓ Median time: {timing_results['median_time']:.6f}s")
-            print(f"✓ Std dev: {timing_results['std']:.6f}s")
-            print(f"✓ Device: {timing_results['device']}")
+        logging.debug(f"✓ Mean time: {timing_results['mean_time']:.6f}s")
+        logging.debug(f"✓ Median time: {timing_results['median_time']:.6f}s")
+        logging.debug(f"✓ Std dev: {timing_results['std']:.6f}s")
+        logging.debug(f"✓ Device: {timing_results['device']}")
         result = {
             'dimension': config['dimension'],  # Use 'dimension' for clearer plotting
             'mean_runtime': timing_results.get('mean_time', None),  # Explicit mean runtime
@@ -63,15 +69,13 @@ def objective(config: dict):
 
         # Log results to W&B
         wandb.log(result)
-        if verbose:
-            print(f"✓ Results logged successfully")
+        logging.debug(f"✓ Results logged successfully")
 
         # Return the main metric for sweep optimization
         return timing_results['mean_time']
         
     except Exception as e:
-        if verbose:
-            print(f"✗ Benchmark failed: {e}")
+        logging.debug(f"✗ Benchmark failed: {e}")
         wandb.log({"status": "failed", "error": str(e)})
         return None
 
@@ -80,27 +84,27 @@ def main():
     # Load base configuration
     try:
         base_config = VMFConfig.from_yaml('configs/base.yaml')
-        if verbose:
-            print(f"Loaded base configuration from configs/base.yaml")
+        logging.debug(f"Loaded base configuration from configs/base.yaml")
     except Exception as e:
-        if verbose:
-            print(f"✗ Error loading base configuration: {e}")
+        logging.debug(f"✗ Error loading base configuration: {e}")
         return None
 
     
     with wandb.init() as run:
         # Merge base config with sweep config
         run.config.update(base_config.model_dump(), allow_val_change=False)
+        # get logging level from config
+        verbosity = run.config.get('verbosity', 'info')
+        setup_logging(verbosity)
+        logging.info(f"Starting sweep run with ID: {run.id}")
 
         mean_time = objective(dict(run.config))
         if mean_time is not None:
             # Log the main optimization metric
             run.log({"benchmark/mean_time": mean_time})
-            if verbose:
-                print(f"\n✓ Experiment completed - Mean time: {mean_time:.6f}s")
+            logging.info(f"\n✓ Experiment completed - Mean time: {mean_time:.6f}s")
         else:
-            if verbose:
-                print(f"\n✗ Experiment failed or skipped - no mean time to log")
+            logging.warning(f"\n✗ Experiment failed or skipped - no mean time to log")
 
 if __name__ == "__main__":
     main()

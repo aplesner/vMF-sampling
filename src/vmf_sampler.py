@@ -160,7 +160,7 @@ class vMF:
             raise ValueError("mu must be a numpy array or torch tensor")
         elif isinstance(mu, torch.Tensor) and not torch.isclose(torch.norm(mu), torch.tensor(1.0, device=mu.device, dtype=mu.dtype)):
             raise ValueError("mu must be a unit vector")
-        elif not np.isclose(np.linalg.norm(mu), 1.0):
+        elif isinstance(mu, np.ndarray) and not np.isclose(np.linalg.norm(mu), 1.0):
             raise ValueError("mu must be a unit vector")
         else:
             return
@@ -178,15 +178,20 @@ class vMF:
                 base_point[0] = 1.
                 embedded = torch.cat([self.mu[None, :], torch.zeros((self.dim - 1, self.dim), device=self.device, dtype=self.dtype)], dim=0)
                 embedded = torch.transpose(embedded, 0, 1)
-
+                
+                # QR decomposition does not support float16 or bfloat16, so we need to upcast and downcast
+                if self.dtype in [torch.float16, torch.bfloat16]:
+                    embedded = embedded.to(torch.float32)
                 self.rotmatrix, _ = torch.linalg.qr(embedded)
+                if self.dtype in [torch.float16, torch.bfloat16]:
+                    self.rotmatrix = self.rotmatrix.to(self.dtype)
 
-            # check if the rotation is correct
-            rotated_base_point = torch.mv(self.rotmatrix, base_point)
-            if torch.allclose(rotated_base_point, self.mu):
-                self.rotsign = 1
-            else:
-                self.rotsign = -1
+                # check if the rotation is correct
+                rotated_base_point = torch.mv(self.rotmatrix, base_point)
+                if torch.allclose(rotated_base_point, self.mu):
+                    self.rotsign = 1
+                else:
+                    self.rotsign = -1
 
     def _compute_rotation_matrix_numpy(self):
         """Compute rotation matrix using NumPy."""
