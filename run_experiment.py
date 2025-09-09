@@ -11,23 +11,15 @@ import argparse
 import os
 import sys
 from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from src import VMFConfig, run_benchmark, VMFLogger
-
-# Load environment variables from .env file if it exists
-def load_env_file(env_file: str = ".env"):
-    """Load environment variables from file."""
-    env_path = Path(env_file)
-    if env_path.exists():
-        with open(env_path, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#'):
-                    key, _, value = line.partition('=')
-                    os.environ[key.strip()] = value.strip()
+from src.logger import setup_logging
 
 
 def main():
@@ -45,73 +37,74 @@ Examples:
     
     parser.add_argument('--config', 
                        help='Path to configuration file (JSON or YAML)')
-    parser.add_argument('--env-file', 
-                       default='.env',
-                       help='Path to environment file (default: .env)')
     
     args = parser.parse_args()
     
-    # Load environment variables
-    load_env_file(args.env_file)
     
     # Load base.yaml configuration
     config = VMFConfig.from_yaml('configs/base.yaml')
+    setup_logging(config.verbosity)
+    logger.info(f"Loaded base configuration from configs/base.yaml. W&B offline mode {config.wandb_offline}.")
 
+    # TODO: This overrides the base config entirely with default values from VMFConfig. Introduce a merge function in VMFConfig to handle this more gracefully.
+    # TODO: Remove the json and yaml distinction and have a single from_file method that infers type from suffix.
     # If additional config file is provided, load and override
     if args.config:
         config_path = Path(args.config)
         if config_path.suffix.lower() in ['.yaml', '.yml']:
-            config = config.from_yaml(args.config)
+            override_config = VMFConfig.from_yaml(args.config)
         elif config_path.suffix.lower() == '.json':
-            config = config.from_json(args.config)
+            override_config = VMFConfig.from_json(args.config)
         else:
             raise ValueError(f"Configuration file must be .json or .yaml but got {config_path.suffix}")
+        
+        # Merge base config with override config  
+        merged_dict = config.model_dump()
+        merged_dict.update(override_config.model_dump())
+        config = VMFConfig(**merged_dict)
 
-        print(f"Loaded configuration from {args.config}")
+        logger.debug(f"Loaded configuration from {args.config}")
+        logger.debug(f"Final configuration: {config}")
 
     
     # Initialize logger
-    logger = VMFLogger(config=config)
+    experiment_logger = VMFLogger(config=config)
+    setup_logging(config.verbosity)
 
-    print("=" * 60)
-    print("vMF Sampling Experiment")
-    print("=" * 60)
-    print(f"Configuration:")
-    print(f"  Dimension: {config.dimension}")
-    print(f"  Kappa: {config.kappa}")
-    print(f"  Samples: {config.num_samples}")
-    print(f"  Implementation: {config.implementation}")
-    print(f"  Seed: {config.seed}")
-    print(f"  Device: {config.device}")
-    print(f"  W&B Project: {config.wandb_project}")
-    print(f"  W&B Offline: {config.wandb_offline}")
-    
-    print(f"{'='*60}")
-    
-    print("Running Benchmarks...")
+    logger.info("=" * 60)
+    logger.info("vMF Sampling Experiment")
+    logger.debug("=" * 60)
+    logger.debug(f"Configuration:")
+    logger.debug(f"  Dimension: {config.dimension}")
+    logger.debug(f"  Kappa: {config.kappa}")
+    logger.debug(f"  Samples: {config.num_samples}")
+    logger.debug(f"  Implementation: {config.implementation}")
+    logger.debug(f"  Seed: {config.seed}")
+    logger.debug(f"  Device: {config.device}")
+    logger.debug(f"  W&B Project: {config.wandb_project}")
+    logger.debug(f"  W&B Offline: {config.wandb_offline}")
+
+    logger.info("=" * 60)
+
+    logger.info("Running Benchmarks...")
     timing_results = {}
     
     timing_results = run_benchmark(config)
-    print(f"✓ Mean time: {timing_results['mean_time']:.6f}s")
-    print(f"✓ Median time: {timing_results['median_time']:.6f}s")
-    print(f"✓ Std dev: {timing_results['std']:.6f}s")
-    print(f"✓ Device: {timing_results['device']}")
-    # except Exception as e:
-    #     print(f"✗ Benchmark failed: {e}")
-    #     timing_results = {}
-    
-    # Log results
+    logger.info(f"✓ Mean time: {timing_results['mean_time']:.6f}s")
+    logger.info(f"✓ Median time: {timing_results['median_time']:.6f}s")
+    logger.info(f"✓ Std dev: {timing_results['std']:.6f}s")
+
     try:
-        logger.log_experiment(config, timing_results)
-        print(f"✓ Results logged successfully")
+        experiment_logger.log_experiment(config, timing_results)
+        logger.info(f"✓ Results logged successfully")
     except Exception as e:
-        print(f"✗ Logging failed: {e}")
-    
-    logger.finish()
-    
-    print("\n" + "=" * 60)
-    print("Experiment Complete!")
-    print("=" * 60)
+        logger.error(f"✗ Logging failed: {e}")
+
+    experiment_logger.finish()
+
+    logger.info("=" * 60)
+    logger.info("Experiment Complete!")
+    logger.info("=" * 60)
 
 
 if __name__ == "__main__":

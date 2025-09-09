@@ -18,4 +18,4 @@ wandb_project: "vmf-sampling"  # W&B project name
 wandb_offline: false  # Whether to run wandb in offline mode
 
 # Logging settings
-verbosity: "info"  # Logging verbosity level: 'debug', 'info', 'warning', 'error'
+verbosity: "debug"  # Logging verbosity level: 'debug', 'info', 'warning', 'error'

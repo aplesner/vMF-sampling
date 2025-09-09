@@ -1,3 +1,4 @@
+import logging
 try:
     import wandb
     _WANDB_AVAILABLE = True
@@ -8,6 +9,21 @@ except ImportError:
 from .config import VMFConfig
 
 LOGGING_FORMAT='%(filename)s:%(lineno)d - %(asctime)s - %(levelname)s - %(message)s'
+
+
+def setup_logging(level: str) -> None:
+    """Configure root logger for the entire application."""
+
+    format_string = "%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s - %(message)s"
+
+    logging_level = getattr(logging, level.upper(), logging.INFO)
+
+    logging.basicConfig(
+        level=logging_level,
+        format=format_string,
+        datefmt="%Y-%m-%d %H:%M:%S",
+        force=True
+    )
 
 
 class VMFLogger:
