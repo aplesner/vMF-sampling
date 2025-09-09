@@ -173,13 +173,13 @@ class vMF:
         assert self.dtype in TORCH_DTYPES, "dtype must be a torch floating point type"
 
         with torch.no_grad():
-            with torch.autocast(device_type=self.device.type, dtype=self.dtype):
+            with torch.autocast(device_type=self.device.type, dtype=self.dtype, enabled=self.dtype in [torch.float16, torch.bfloat16]):
                 base_point = torch.zeros((self.dim, ), device=self.device, dtype=self.dtype)
                 base_point[0] = 1.
                 embedded = torch.cat([self.mu[None, :], torch.zeros((self.dim - 1, self.dim), device=self.device, dtype=self.dtype)], dim=0)
                 embedded = torch.transpose(embedded, 0, 1)
 
-            self.rotmatrix, _ = torch.linalg.qr(embedded)
+                self.rotmatrix, _ = torch.linalg.qr(embedded)
 
             # check if the rotation is correct
             rotated_base_point = torch.mv(self.rotmatrix, base_point)
@@ -252,7 +252,7 @@ class vMF:
         assert self.dtype in TORCH_DTYPES, "dtype must be a torch floating point type"
 
         with torch.no_grad():
-            with torch.autocast(device_type=self.device.type, dtype=self.dtype):
+            with torch.autocast(device_type=self.device.type, dtype=self.dtype, enabled=self.dtype in [torch.float16, torch.bfloat16]):
                 return torch.matmul(self.rotmatrix, samples.T).T * self.rotsign
             
     def _rotate_samples_numpy(self, samples: np.ndarray) -> np.ndarray:
