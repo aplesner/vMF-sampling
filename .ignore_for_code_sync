@@ -1,0 +1,9 @@
+.git
+data/
+results/
+models/
+__pycache__/
+*.pt
+*.sif
+.ignore_for_code_sync
+*.tar.gz

@@ -38,6 +38,7 @@ def main(config: VMFConfig):
     """Main function to generate vMF samples based on config file."""
 
     logging.debug(f"Using configuration: {config}")
+    logging.debug(f"Using implementation: {config.implementation} (torch status: {config.implementation == Implementation.TORCH.value})")
 
     set_seed(config.seed or 42)
     
@@ -48,15 +49,19 @@ def main(config: VMFConfig):
         kappa=config.kappa,
         seed=config.seed or 42,
         device=config.device,
-        use_scipy_implementation=(config.implementation == Implementation.SCIPY)
+        dtype=getattr(torch, config.dtype) if config.implementation == Implementation.TORCH.value else getattr(np, config.dtype),
+        use_scipy_implementation=(config.implementation == Implementation.SCIPY.value)
     )
 
     if config.random_mean_direction:
-        mu = np.random.randn(config.dimension)
+        mu = np.random.randn(config.dimension).astype(getattr(np, config.dtype))
         mu = mu / np.linalg.norm(mu)
-        if config.implementation == Implementation.TORCH:
-            mu = torch.from_numpy(mu).float()
+        if config.implementation == Implementation.TORCH.value:
+            logging.debug(f"Converting mu to torch tensor of dtype {config.dtype}")
+            dtype = getattr(torch, config.dtype)
+            mu = torch.from_numpy(mu).to(dtype=dtype)
             if config.device == 'cuda' and torch.cuda.is_available():
+                logging.debug("Moving mu to CUDA device")
                 mu = mu.cuda()
         sampler.set_mu(mu)
 

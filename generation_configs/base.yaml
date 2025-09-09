@@ -1,9 +1,10 @@
-dimension: 8000
+dimension: 4000
 num_samples: 2000
 kappa: 10.0
 output_dir: "data_samples/"
 implementation: "torch"
-random_mean_direction: false
+dtype: "float16"
+random_mean_direction: true
 device: "auto"
 seed: 1
 verbosity: "debug"
