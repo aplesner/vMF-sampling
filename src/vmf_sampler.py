@@ -20,6 +20,16 @@ class Implementation(Enum):
     TORCH = "torch"
 
 
+NP_TORCH_DTYPE_MAP = {
+    np.float32: torch.float32,
+    np.float64: torch.float64,
+    np.float16: torch.float16,
+}
+TORCH_NP_DTYPE_MAP = {v: k for k, v in NP_TORCH_DTYPE_MAP.items()}
+TORCH_NP_DTYPE_MAP[torch.bfloat16] = np.float16  # map bfloat16 to float16 in numpy
+TORCH_DTYPES = [torch.float16, torch.bfloat16, torch.float32, torch.float64]
+NP_DTYPES = [np.float16, np.float32, np.float64]
+
 class vMF:
     """
     Von Mises-Fisher distribution sampler.
@@ -82,7 +92,7 @@ class vMF:
     """
 
     def __init__(self, dim: int, mu: np.ndarray | torch.Tensor | None = None, rotation_needed: bool = True, kappa: float = 10.0, seed: int | None = None,
-                 device: str | torch.device | None = None, dtype: torch.dtype | None = None,
+                 device: str | torch.device | None = None, dtype: np.dtype | torch.dtype | None = None,
                  use_scipy_implementation: bool = False):
 
         assert dim > 1, "dim must be greater than 1"
@@ -104,7 +114,7 @@ class vMF:
         else:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.dtype = dtype if dtype is not None else torch.float32
+        self.dtype = dtype if dtype is not None else np.float32
 
         self.use_scipy_implementation = use_scipy_implementation
 
@@ -115,6 +125,8 @@ class vMF:
         self.mu = None
         if mu is not None:
             self.set_mu(mu)
+
+        logger.debug("Initialized vMF sampler with dim=%d, kappa=%.2f, device=%s, dtype=%s", self.dim, self.kappa, self.device, self.dtype)
 
     def set_seed(self, seed: int | None):
         """
@@ -144,23 +156,21 @@ class vMF:
         ValueError
             If mu is not a unit vector.
         """
-        if isinstance(mu, torch.Tensor):
-            if mu.dim() != 1 or mu.shape[0] != self.dim:
-                raise ValueError(f"mu must be a 1D tensor of shape ({self.dim},)")
-
-            if not torch.isclose(torch.norm(mu), torch.tensor(1.0)):
-                raise ValueError("mu must be a unit vector")
+        if not isinstance(mu, (np.ndarray, torch.Tensor)):
+            raise ValueError("mu must be a numpy array or torch tensor")
+        elif isinstance(mu, torch.Tensor) and not torch.isclose(torch.norm(mu), torch.tensor(1.0, device=mu.device, dtype=mu.dtype)):
+            raise ValueError("mu must be a unit vector")
+        elif not np.isclose(np.linalg.norm(mu), 1.0):
+            raise ValueError("mu must be a unit vector")
         else:
-            if mu.ndim != 1 or mu.shape[0] != self.dim:
-                raise ValueError(f"mu must be a 1D array of shape ({self.dim},)")
-
-            if not np.isclose(np.linalg.norm(mu), 1.0):
-                raise ValueError("mu must be a unit vector")
+            return
 
     def _compute_rotation_matrix_torch(self):
         """Compute rotation matrix using PyTorch."""
         if not isinstance(self.mu, torch.Tensor):
             raise ValueError("mu must be a torch tensor")
+
+        assert self.dtype in TORCH_DTYPES, "dtype must be a torch floating point type"
 
         with torch.no_grad():
             with torch.autocast(device_type=self.device.type, dtype=self.dtype):
@@ -183,13 +193,8 @@ class vMF:
         if not isinstance(self.mu, np.ndarray):
             raise ValueError("mu must be a numpy array")
 
-        TORCH_DTYPE_TO_NUMPY_DTYPE = {
-            torch.float32: np.float32,
-            torch.float64: np.float64,
-            torch.float16: np.float16,
-        }
-
-        dtype = TORCH_DTYPE_TO_NUMPY_DTYPE.get(self.dtype, np.float32)
+        dtype = self.mu.dtype
+        assert dtype in NP_DTYPES, "dtype must be a numpy floating point type"
 
         base_point = np.zeros((self.dim, ), dtype=dtype)
         base_point[0] = 1.
@@ -244,6 +249,7 @@ class vMF:
 
         assert isinstance(self.rotsign, int)
         assert isinstance(self.rotmatrix, torch.Tensor)
+        assert self.dtype in TORCH_DTYPES, "dtype must be a torch floating point type"
 
         with torch.no_grad():
             with torch.autocast(device_type=self.device.type, dtype=self.dtype):
@@ -318,7 +324,7 @@ class vMF:
         self.rotsign = None
         self.dim = mu.shape[0]
         # mu[0] is 1 then rotation is identity otherwise rotation is needed
-        if isinstance(mu, torch.Tensor) and torch.isclose(mu[0], torch.tensor(1.0)):
+        if isinstance(mu, torch.Tensor) and torch.isclose(mu[0], torch.tensor(1.0, device=mu.device, dtype=mu.dtype)):
             self.rotation_needed = False
             logger.debug("Rotation not needed for mu.")
         elif isinstance(mu, np.ndarray) and np.isclose(mu[0], 1.0):
@@ -327,6 +333,18 @@ class vMF:
         else:
             self.rotation_needed = True
             logger.debug("Rotation needed for mu.")
+
+        # Check if dtype changed and overwrite self.dtype
+        if isinstance(mu, torch.Tensor):
+            if mu.dtype not in TORCH_DTYPES:
+                raise ValueError(f"mu dtype must be one of {TORCH_DTYPES}, got {mu.dtype}")
+            self.dtype = mu.dtype
+            logger.debug(f"Setting dtype to {self.dtype} based on mu torch dtype.")
+        elif isinstance(mu, np.ndarray):
+            if mu.dtype not in NP_DTYPES:
+                raise ValueError(f"mu dtype must be one of {NP_DTYPES}, got {mu.dtype}")
+            self.dtype = mu.dtype
+            logger.debug(f"Setting dtype to {self.dtype} based on mu numpy dtype.")
 
         if self.rotation_needed:
             self.compute_rotation_matrix()
@@ -418,6 +436,12 @@ class vMF:
             logger.debug("mu is unset but will be set to default [1, 0, ..., 0]. Rotation is then identity and will be skipped.")
             mu = np.zeros(self.dim)
             mu[0] = 1.0
+            if isinstance(self.dtype, torch.dtype):
+                mu = torch.from_numpy(mu).to(device=self.device, dtype=self.dtype)
+                logger.debug(f"Converting mu to torch tensor of dtype {self.dtype} and device {self.device}")
+            else:
+                mu = mu.astype(self.dtype)
+                logger.debug(f"Converting mu to numpy array of dtype {self.dtype}")
             self.set_mu(mu)
             self.rotation_needed = False
         else:
