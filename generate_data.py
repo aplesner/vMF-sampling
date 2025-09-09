@@ -10,20 +10,7 @@ import os
 
 from src.vmf_sampler import vMF, Implementation
 from src.config import VMFConfig
-
-def setup_logging(level: str) -> None:
-    """Configure root logger for the entire application."""
-
-    format_string = "%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s - %(message)s"
-
-    logging_level = getattr(logging, level.upper(), logging.INFO)
-
-    logging.basicConfig(
-        level=logging_level,
-        format=format_string,
-        datefmt="%Y-%m-%d %H:%M:%S",
-        force=True
-    )
+from src.logger import setup_logging
 
 
 def set_seed(seed: int):

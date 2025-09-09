@@ -1,4 +1,5 @@
 # PyTorch CPU implementation configuration
-dimension: 512
+dimension: 2048
 implementation: "torch"
 device: "cpu"
+dtype: "float32"
