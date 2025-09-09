@@ -37,9 +37,6 @@ def set_seed(seed: int):
 def main(config: VMFConfig):
     """Main function to generate vMF samples based on config file."""
 
-    logging.debug(f"Using configuration: {config}")
-    logging.debug(f"Using implementation: {config.implementation} (torch status: {config.implementation == Implementation.TORCH.value})")
-
     set_seed(config.seed or 42)
     
     # TODO: add support for torch implementation and device handling
