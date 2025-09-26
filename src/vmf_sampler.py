@@ -9,6 +9,7 @@ import numpy as np
 import torch
 from enum import Enum
 import logging
+from .profiling import profile
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -283,6 +284,7 @@ class vMF:
 
         return np.einsum('ij,...j->...i', self.rotmatrix, samples) * self.rotsign
 
+    @profile
     def rotate_samples(self, samples: np.ndarray | torch.Tensor) -> np.ndarray | torch.Tensor:
         """
         Rotate samples to align with the mean direction mu.
@@ -370,6 +372,7 @@ class vMF:
         else:
             return np.random.default_rng(seed)
             
+    @profile
     def _sample_uniform_direction(self, dim: int, size: int) -> np.ndarray:
         """
         Generate uniform directions on the unit sphere.
@@ -390,6 +393,7 @@ class vMF:
         samples /= np.linalg.norm(samples, axis=-1, keepdims=True)
         return samples
 
+    @profile
     def sample(self, num_samples: int, mu: np.ndarray | torch.Tensor | None = None, rotation_needed: bool = True,
                kappa: float | None = None) -> np.ndarray | torch.Tensor:
         """

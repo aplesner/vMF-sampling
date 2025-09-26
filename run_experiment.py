@@ -24,14 +24,15 @@ from src.logger import setup_logging
 
 def main():
     """
-    Main execution function that accepts config file as input.
+    Main execution function that accepts config file as input or works with wandb sweep.
     """
     parser = argparse.ArgumentParser(
         description='Run vMF sampling experiments with benchmarking and profiling',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python run_experiment.py --config configs/numpy.yaml
+  python run_experiment.py --config configs/base.yaml
+  wandb sweep wandb_sweep.yaml  # Use wandb for parameter sweeps
         """
     )
     
@@ -40,30 +41,28 @@ Examples:
     
     args = parser.parse_args()
     
-    
-    # Load base.yaml configuration
-    config = VMFConfig.from_yaml('configs/base.yaml')
-    setup_logging(config.verbosity)
-    logger.info(f"Loaded base configuration from configs/base.yaml. W&B offline mode {config.wandb_offline}.")
-
-    # TODO: This overrides the base config entirely with default values from VMFConfig. Introduce a merge function in VMFConfig to handle this more gracefully.
-    # TODO: Remove the json and yaml distinction and have a single from_file method that infers type from suffix.
-    # If additional config file is provided, load and override
-    if args.config:
-        config_path = Path(args.config)
-        if config_path.suffix.lower() in ['.yaml', '.yml']:
-            override_config = VMFConfig.from_yaml(args.config)
-        elif config_path.suffix.lower() == '.json':
-            override_config = VMFConfig.from_json(args.config)
-        else:
-            raise ValueError(f"Configuration file must be .json or .yaml but got {config_path.suffix}")
+    # Check if running as part of wandb sweep
+    import wandb
+    if wandb.run is not None:
+        # Running in wandb sweep - use sweep config
+        logger.info("Running as part of wandb sweep")
         
-        # Merge base config with override config  
-        merged_dict = config.model_dump()
-        merged_dict.update(override_config.model_dump())
-        config = VMFConfig(**merged_dict)
-
-        logger.debug(f"Loaded configuration from {args.config}")
+        # Create config from wandb sweep parameters
+        sweep_config = dict(wandb.config)
+        config = VMFConfig(**sweep_config)
+        
+        setup_logging(config.verbosity)
+        logger.info(f"Sweep configuration: {dict(wandb.config)}")
+    else:
+        # Running standalone - use config file or default
+        if args.config:
+            config = VMFConfig.from_config_file(args.config)
+            logger.info(f"Loaded configuration from {args.config}")
+        else:
+            config = VMFConfig.from_config_file('configs/base.yaml')
+            logger.info("Loaded base configuration from configs/base.yaml")
+        
+        setup_logging(config.verbosity)
         logger.debug(f"Final configuration: {config}")
 
     

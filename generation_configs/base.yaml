@@ -1,13 +1,6 @@
-dimension: 4000
-num_samples: 2000
-kappa: 10.0
-output_dir: "/scratch/aplesner/data_samples/"
-implementation: "torch"
-dtype: "float16"
-random_mean_direction: true
-device: "auto"
-seed: 1
-verbosity: "info"
-wandb_project: "vmf-estimation"
-wandb_offline: false
+# Base configuration for generation experiments
+# Inherits defaults from configs/base.yaml, overrides specific values
 
+# Override for generation experiments
+num_samples: 2000
+output_dir: "samples/"

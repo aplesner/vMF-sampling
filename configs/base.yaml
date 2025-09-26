@@ -2,20 +2,25 @@
 # This file contains default values that can be overridden
 
 # Experiment settings
-dimension: 3  # Dimension of mu (must be >= 2)
-kappa: 1.0  # Concentration parameter (must be positive)
+dimension: 1000  # Dimension of mu (must be >= 2)
+kappa: 1000.0  # Concentration parameter (must be positive)
 num_samples: 1000  # Number of samples to generate (must be positive)
-implementation: "numpy"  # Implementation: 'scipy', 'numpy', 'torch'
+implementation: "torch"  # Implementation: 'scipy', 'numpy', 'torch'
+random_mean_direction: true  # Whether to use random mean direction
 
 # Random seed
 seed: 42  # Random seed for reproducibility (null for random)
 
 # Compute settings
 device: "auto"  # Torch device ('cpu', 'cuda', 'auto')
+dtype: "float32"  # Data type for torch tensors
+
+# Output settings
+output_dir: "generated_samples/"  # Directory to store results
 
 # Weights & Biases settings
 wandb_project: "vmf-sampling"  # W&B project name
 wandb_offline: false  # Whether to run wandb in offline mode
 
 # Logging settings
-verbosity: "debug"  # Logging verbosity level: 'debug', 'info', 'warning', 'error'
+verbosity: "info"  # Logging verbosity level: 'debug', 'info', 'warning', 'error'
