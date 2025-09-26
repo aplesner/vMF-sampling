@@ -8,5 +8,6 @@ From: pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
     pip3 install --no-cache-dir \
         pytorch_lightning \
         wandb \
-        pydantic
+        pydantic \
+        omegaconf
 

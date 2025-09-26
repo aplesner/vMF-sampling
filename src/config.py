@@ -1,68 +1,47 @@
-import json
-import yaml
+"""Minimal configuration system using Pydantic + OmegaConf."""
+
 from pathlib import Path
+from typing import Optional
+from pydantic import BaseModel, Field
+from omegaconf import OmegaConf
 
-from pydantic import BaseModel, Field, field_validator
-from .vmf_sampler import Implementation
 
-
-class VMFConfig(BaseModel):
-    """Configuration class for vMF sampling experiments."""
+class Config(BaseModel):
+    """Main configuration class."""
     
-    dimension: int = Field(default=3, description="Dimension of mu", ge=2)
-    random_mean_direction: bool = Field(default=True, description="Whether to use random mean direction")
-    kappa: float = Field(default=1.0, description="Concentration parameter", gt=0)
-    num_samples: int = Field(default=1000, description="Number of samples to generate", gt=0)
-    implementation: str = Field(default="numpy", description="Implementation: 'scipy', 'numpy', 'torch'", pattern="^(scipy|numpy|torch)$")
-    wandb_project: str = Field(default="vmf-sampling", description="Weights & Biases project name")
-    seed: int | None = Field(default=None, description="Random seed")
-    device: str = Field(default="auto", description="Torch device ('cpu', 'cuda', 'auto')")
-    dtype: str = Field(default="float32", description="Data type for torch tensors ('float32', 'float64', 'float16', 'bfloat16')", pattern="^(float16|bfloat16|float32|float64)$")
-    wandb_offline: bool = Field(default=True, description="Whether to run wandb in offline mode")
-    output_dir: str = Field(default="generated_samples/", description="Directory to store results")
-    verbosity: str = Field(default="info", description="Verbosity level for logging", pattern="^(debug|info|warning|error|critical)$")
+    # Core parameters
+    dimension: int = Field(default=1000, ge=2)
+    kappa: float = Field(default=1000.0, gt=0)
+    num_samples: int = Field(default=1000, gt=0)
+    
+    # Implementation settings
+    implementation: str = Field(default="torch", pattern="^(numpy|scipy|torch)$")
+    device: str = Field(default="auto")
+    dtype: str = Field(default="float32", pattern="^(float16|bfloat16|float32|float64)$")
+    
+    # Generation settings
+    random_mean_direction: bool = True
+    seed: Optional[int] = 42
+    output_dir: str = "generated_samples/"
+    
+    # Logging
+    verbosity: str = Field(default="info", pattern="^(debug|info|warning|error|critical)$")
+    
+    # Wandb
+    wandb_project: str = "vmf-sampling"
+    wandb_offline: bool = False
 
-    @field_validator('implementation')
     @classmethod
-    def validate_implementation(cls, v):
-        try:
-            Implementation(v)
-        except ValueError:
-            valid_values = [impl.value for impl in Implementation]
-            raise ValueError(f"implementation must be one of: {valid_values}")
-        return v
-    
-    @classmethod
-    def from_json(cls, filepath: str|Path):
-        """Load configuration from JSON file."""
-        filepath = Path(filepath)
-        with open(filepath, 'r') as f:
-            config_dict = json.load(f)
-        return cls(**config_dict)
-    
-    @classmethod
-    def from_yaml(cls, filepath: str|Path):
-        """Load configuration from YAML file."""
-        filepath = Path(filepath)
-        with open(filepath, 'r') as f:
-            config_dict = yaml.safe_load(f)
-        return cls(**config_dict)
-    
-    def to_dict(self):
-        """Convert configuration to dictionary."""
-        return self.model_dump()
-    
-    
-    def __repr__(self):
-        return f"VMFConfig({self.to_dict()})"
-    
-    # def get_verbosity(self) -> int:
-    #     """Get logging level from verbosity string."""
-    #     levels = {
-    #         "debug": logging.DEBUG,
-    #         "info": logging.INFO,
-    #         "warning": logging.WARNING,
-    #         "error": logging.ERROR,
-    #         "critical": logging.CRITICAL
-    #     }
-    #     return levels.get(self.verbosity.lower(), logging.INFO)
+    def load(cls, config_path: Optional[str] = None) -> 'Config':
+        """Load config from file, merging with base defaults."""
+        # Load base config
+        base_config = OmegaConf.load('configs/base.yaml')
+        
+        # Merge with provided config if specified
+        if config_path:
+            user_config = OmegaConf.load(config_path)
+            merged_config = OmegaConf.merge(base_config, user_config)
+        else:
+            merged_config = base_config
+            
+        return cls(**OmegaConf.to_container(merged_config))

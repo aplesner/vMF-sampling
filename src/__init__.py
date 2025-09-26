@@ -6,10 +6,7 @@ benchmarking, profiling, and logging capabilities.
 """
 
 from .vmf_sampler import vMF, Implementation
-from .config import VMFConfig
-from .benchmark import run_benchmark
-from .profiler import run_profiling, DetailedProfiler
-from .logger import VMFLogger
+from .config import Config
 
 __version__ = "1.0.0"
 __author__ = "Claude Code"
@@ -17,9 +14,5 @@ __author__ = "Claude Code"
 __all__ = [
     'vMF',
     'Implementation', 
-    'VMFConfig',
-    'run_benchmark',
-    'run_profiling',
-    'DetailedProfiler',
-    'VMFLogger'
+    'Config'
 ]

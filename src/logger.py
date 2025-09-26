@@ -86,3 +86,4 @@ class VMFLogger:
     def finish(self):
         """Clean up and finish logging."""
         self.run.finish()
+        logging.info("wandb run finished.")
