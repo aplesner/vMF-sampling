@@ -1,3 +1,0 @@
-# SciPy implementation configuration
-dimension: 1024
-implementation: "scipy"

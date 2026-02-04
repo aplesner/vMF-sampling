@@ -1,5 +1,0 @@
-# NumPy implementation configuration
-dimension: 2048
-implementation: "numpy"
-dtype: "float32"
-verbosity: "debug"

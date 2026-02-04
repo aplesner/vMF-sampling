@@ -1,4 +1,0 @@
-# PyTorch implementation configuration
-dimension: 1024
-implementation: "torch"
-device: "auto"
