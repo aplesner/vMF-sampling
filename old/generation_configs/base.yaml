@@ -1,6 +1,0 @@
-# Base configuration for generation experiments
-# Inherits defaults from configs/base.yaml, overrides specific values
-
-# Override for generation experiments
-num_samples: 2000
-output_dir: "samples/"

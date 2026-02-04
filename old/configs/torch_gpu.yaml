@@ -1,5 +1,0 @@
-# PyTorch GPU implementation configuration
-dimension: 2048
-implementation: "torch"
-device: "cuda"
-dtype: "float32"
