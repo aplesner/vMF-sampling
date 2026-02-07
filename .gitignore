@@ -56,3 +56,7 @@ wandb/
 
 # singularity
 *.sif
+
+# Scalene profiles
+scalene-profile.json
+scalene-profile.html
