@@ -15,7 +15,15 @@ class ScipyvMF(vMFSampler):
         kappa: float = 10.0,
         seed: int | None = None,
         rotation_needed: bool = True,
+        dtype: np.dtype | None = None,
     ) -> None:
+        if dtype is not None:
+            if dtype not in DTYPES:
+                raise ValueError(f"dtype must be one of {DTYPES}, got {dtype}")
+            self.dtype = dtype
+        else:
+            self.dtype = np.float64
+
         super().__init__(dim, mu=mu, kappa=kappa, seed=seed, rotation_needed=rotation_needed)
         self.random_state = np.random.default_rng(seed)
         self.rotmatrix: np.ndarray | None = None
@@ -55,7 +63,8 @@ class ScipyvMF(vMFSampler):
     def _rotate_samples(self, samples: np.ndarray) -> np.ndarray:
         if self.rotmatrix is None:
             self._compute_rotation_matrix()
-        return np.einsum("ij,...j->...i", self.rotmatrix, samples) * self.rotsign
+        samples = np.einsum("ij,...j->...i", self.rotmatrix, samples) * self.rotsign
+        return samples
 
     def _sample_uniform_direction(self, dim: int, size: int) -> np.ndarray:
         samples = self.random_state.standard_normal((size, dim))
