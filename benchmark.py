@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-import time
+import math
+import statistics
+import timeit
 from typing import Any
 
 import numpy as np
@@ -18,10 +20,12 @@ except ImportError:
     torch = None
     TORCH_DTYPES = []
 
-SEEDS = [0, 1, 2]
-DIMS = [750]
+SEED = 0
+DIMS = [512]
 KAPPAS = [50.0]
 NUM_SAMPLES = 5_000
+TARGET_TIME_S = 5.0
+TIMEIT_REPEATS = 3
 
 AGGREGATE_SEEDS = True
 DISPLAY_MEAN_STD = True
@@ -39,10 +43,32 @@ def _make_mu_torch(dim: int, dtype: torch.dtype, device: torch.device) -> torch.
     return mu
 
 
-def _time_sample(sampler: Any, num_samples: int) -> float:
-    start = time.perf_counter()
-    _ = sampler.sample(num_samples)
-    return time.perf_counter() - start
+def _time_sample(sampler: vMF, num_samples: int, target_s: float, repeats: int) -> tuple[float, float]:
+    assert target_s > 0.1, f"Target time must be greater than 0.1: {target_s}"
+    def _run_once() -> None:
+        result = sampler.sample(num_samples)
+        if torch is not None and isinstance(result, torch.Tensor) and result.is_cuda:
+            torch.cuda.synchronize(result.device)
+
+    if torch is not None and torch.cuda.is_available():
+        torch.cuda.synchronize()
+    # Warm up
+    _run_once()
+
+    # Initial timings. This gives us a rough estimate of the time per call.
+    timer = timeit.Timer(_run_once)
+    number, total_time = timer.autorange()
+    if number < 1 or total_time <= 0:
+        raise ValueError(f"Number of calls is less than 1 or total time is less than or equal to 0: {number}, {total_time}")
+    per_call = total_time / number
+
+    # Adjust the number of calls to target the desired time.
+    number = int(max(1, math.ceil(target_s / per_call)))
+    times = timer.repeat(repeat=repeats, number=number)
+    per_call_times = [t / number for t in times]
+    mean = statistics.mean(per_call_times)
+    std = statistics.stdev(per_call_times) if len(per_call_times) > 1 else 0.0
+    return mean, std
 
 
 def _run_backend(
@@ -52,29 +78,28 @@ def _run_backend(
     extra_kwargs,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for dtype in dtypes:
+    for dtype in tqdm.tqdm(dtypes, desc=f"Running benchmark for {backend}"):
         for dim in DIMS:
             mu = make_mu(dim, dtype)
             for kappa in KAPPAS:
-                for seed in SEEDS:
-                    sampler = vMF(
-                        dim=dim,
-                        mu=mu,
-                        kappa=kappa,
-                        seed=seed,
-                        **extra_kwargs(dtype),
-                    )
-                    elapsed = _time_sample(sampler, NUM_SAMPLES)
-                    rows.append(
-                        {
-                            "backend": backend,
-                            "dtype": str(dtype),
-                            "dim": dim,
-                            "kappa": kappa,
-                            "seed": seed,
-                            "time_s": elapsed,
-                        }
-                    )
+                sampler = vMF(
+                    dim=dim,
+                    mu=mu,
+                    kappa=kappa,
+                    seed=SEED,
+                    **extra_kwargs(dtype),
+                )
+                mean_s, std_s = _time_sample(sampler, NUM_SAMPLES, TARGET_TIME_S, TIMEIT_REPEATS)
+                rows.append(
+                    {
+                        "backend": backend,
+                        "dtype": str(dtype),
+                        "dim": dim,
+                        "kappa": kappa,
+                        "time_s_mean": mean_s,
+                        "time_s_std": std_s,
+                    }
+                )
     return rows
 
 
@@ -88,38 +113,78 @@ def _format_mean_std(df: pd.DataFrame) -> pd.DataFrame:
 def main() -> None:
     rows: list[dict[str, Any]] = []
 
+    devices: list[torch.device] = []
     if torch is not None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    else:
-        device = None
+        devices.append(torch.device("cpu"))
+        if torch.cuda.is_available():
+            devices.append(torch.device("cuda"))
+
     backends = [
-        ("numpy", NUMPY_DTYPES, _make_mu_numpy),
-        ("numpy_hh", NUMPY_DTYPES, _make_mu_numpy),
-        ("scipy", SCIPY_DTYPES, _make_mu_numpy),
-        ("torch", TORCH_DTYPES, lambda dim, dtype: _make_mu_torch(dim, dtype, device)),
+        ("numpy", NUMPY_DTYPES, _make_mu_numpy, lambda dtype: {"backend": "numpy", "dtype": dtype}),
+        (
+            "numpy_hh_inplace",
+            NUMPY_DTYPES,
+            _make_mu_numpy,
+            lambda dtype: {"backend": "numpy_hh", "dtype": dtype, "inplace": True},
+        ),
+        (
+            "numpy_hh",
+            NUMPY_DTYPES,
+            _make_mu_numpy,
+            lambda dtype: {"backend": "numpy_hh", "dtype": dtype, "inplace": False},
+        ),
+        ("scipy", SCIPY_DTYPES, _make_mu_numpy, lambda dtype: {"backend": "scipy", "dtype": dtype}),
     ]
-    pbar = tqdm.tqdm(total=len(backends))
-    for backend, dtypes, make_mu in backends:
-        pbar.desc = f"Running benchmark for {backend}"
-        if torch is None and backend == "torch":
-            pbar.skip()
+    if torch is not None:
+        for device in devices:
+            device_label = device.type
+            # (
+            #     f"torch_{device_label}",
+            #     TORCH_DTYPES,
+            #     lambda dim, dtype, d=device: _make_mu_torch(dim, dtype, d),
+            #     lambda dtype, d=device: {"backend": "torch", "device": d, "dtype": dtype},
+            # ),
+            backends.extend(
+                [
+                    (
+                        f"torch_hh_inplace_{device_label}",
+                        TORCH_DTYPES,
+                        lambda dim, dtype, d=device: _make_mu_torch(dim, dtype, d),
+                        lambda dtype, d=device: {
+                            "backend": "torch_hh",
+                            "device": d,
+                            "dtype": dtype,
+                            "inplace": True,
+                        },
+                    ),
+                    (
+                        f"torch_hh_{device_label}",
+                        TORCH_DTYPES,
+                        lambda dim, dtype, d=device: _make_mu_torch(dim, dtype, d),
+                        lambda dtype, d=device: {
+                            "backend": "torch_hh",
+                            "device": d,
+                            "dtype": dtype,
+                            "inplace": False,
+                        },
+                    ),
+                ]
+            )
+    for backend, dtypes, make_mu, extra_kwargs in backends:
+        if torch is None and backend.startswith("torch"):
             continue
-        rows.extend(_run_backend(backend, dtypes, make_mu, lambda _dtype: {"backend": backend}))
-        pbar.update(1)
+        rows.extend(_run_backend(backend, dtypes, make_mu, extra_kwargs))
 
     df = pd.DataFrame(rows)
-    df = df.set_index(["backend", "dtype", "dim", "kappa", "seed"]).sort_index()
+    df = df.set_index(["backend", "dtype", "dim", "kappa"]).sort_index()
 
     if not AGGREGATE_SEEDS:
         print(df)
         return
 
-    grouped = df.groupby(level=["backend", "dtype", "dim", "kappa"])
-    stats = grouped.agg(time_s_mean=("time_s", "mean"), time_s_std=("time_s", "std"))
-
     if DISPLAY_MEAN_STD:
-        stats = _format_mean_std(stats)
-    print(stats)
+        df = _format_mean_std(df)
+    print(df)
 
 
 if __name__ == "__main__":

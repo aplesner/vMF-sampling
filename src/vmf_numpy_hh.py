@@ -15,6 +15,7 @@ class NumpyvMFHH(vMFSampler):
         seed: int | None = None,
         rotation_needed: bool = True,
         dtype: np.dtype | None = None,
+        inplace: bool = True,
     ) -> None:
         if dtype is not None:
             if dtype not in DTYPES:
@@ -25,8 +26,7 @@ class NumpyvMFHH(vMFSampler):
 
         super().__init__(dim, mu=mu, kappa=kappa, seed=seed, rotation_needed=rotation_needed)
         self.random_state = np.random.default_rng(seed)
-        self.rotmatrix: np.ndarray | None = None
-        self.rotsign: int | None = None
+        self.inplace = inplace
 
     def _verify_mu(self, mu: np.ndarray) -> None:
         if not isinstance(mu, np.ndarray):
@@ -64,8 +64,43 @@ class NumpyvMFHH(vMFSampler):
         
         return S_rotated
 
+    def _rotate_householder_inplace(self, S: np.ndarray) -> np.ndarray:
+        """
+        Applies the shortest-path rotation mapping x -> y to set S.
+        S is an array of shape (n_samples, n_dims).
+        """
+        assert S.ndim == 2
+        x = np.zeros((self.dim,), dtype=self.mu.dtype)
+        x[0] = 1.0
+        # 1. First reflection: x -> -x
+        u1 = x
+
+        # 2. Second reflection: -x -> y
+        if np.allclose(x, -self.mu):
+            u2 = np.zeros_like(x)
+            u2[1] = 1.0
+        else:
+            v2 = self.mu - (-x)
+            u2 = v2 / np.linalg.norm(v2)
+        
+        # Vectorized application: H(s) = s - 2(u·s)u
+        # We apply H1 then H2
+        S_outer = np.empty_like(S)
+
+        S_dot = S[:, 0].copy()  # We can use the structure of x to make this faster (skipping the dot product)
+        np.multiply(2, S_dot, out=S_dot)
+        np.outer(S_dot, u1, out=S_outer)
+        S -= S_outer
+        np.dot(S, u2, out=S_dot)
+        np.multiply(2, S_dot, out=S_dot)
+        np.outer(S_dot, u2, out=S_outer)
+        return S - S_outer
+
     def _rotate_samples(self, samples: np.ndarray) -> np.ndarray:
-        return self._rotate_householder(samples)
+        if self.inplace:
+            return self._rotate_householder_inplace(samples.copy())
+        else:
+            return self._rotate_householder(samples)
 
     def _sample_uniform_direction(self, dim: int, size: int) -> np.ndarray:
         samples = self.random_state.standard_normal((size, dim))
