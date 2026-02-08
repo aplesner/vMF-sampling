@@ -32,9 +32,10 @@ def _load_dbs(pattern: str, table: str) -> pd.DataFrame:
 
 def _summarize_benchmark(df: pd.DataFrame) -> pd.DataFrame:
     grouped = df.groupby(["backend", "dtype", "dim", "kappa"])
+    time_col = "time_s" if "time_s" in df.columns else "time_s_mean"
     summary = grouped.agg(
-        time_s_mean=("time_s_mean", "mean"),
-        time_s_std=("time_s_mean", "std"),
+        time_s_mean=(time_col, "mean"),
+        time_s_std=(time_col, "std"),
         n=("seed", "nunique"),
     )
     return summary.reset_index()
@@ -53,7 +54,7 @@ def _summarize_twist(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _summarize(df: pd.DataFrame) -> pd.DataFrame:
-    if "time_s_mean" in df.columns:
+    if "time_s" in df.columns or "time_s_mean" in df.columns:
         return _summarize_benchmark(df)
     if "twist_deg" in df.columns:
         return _summarize_twist(df)

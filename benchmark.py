@@ -4,7 +4,6 @@ import argparse
 import csv
 import math
 import sqlite3
-import statistics
 import timeit
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -25,13 +24,10 @@ except ImportError:
     TORCH_DTYPES = []
 
 DEFAULT_SEEDS = [0, 1, 2, 3, 4]
-DEFAULT_DIMS = [2**power for power in range(1, 14)]
-DEFAULT_KAPPAS = [50.0]
+DEFAULT_DIMS = [2**power for power in range(1, 10)]
 NUM_SAMPLES = 5_000
 TARGET_TIME_S = 5.0
-TIMEIT_REPEATS = 1
-
-KAPPA = 500
+KAPPA = 50
 
 AGGREGATE_SEEDS = True
 DISPLAY_MEAN_STD = True
@@ -49,7 +45,7 @@ def _make_mu_torch(dim: int, dtype: torch.dtype, device: torch.device) -> torch.
     return mu
 
 
-def _time_sample(sampler: vMF, num_samples: int, target_s: float, repeats: int) -> tuple[float, float]:
+def _time_sample(sampler: vMF, num_samples: int, target_s: float) -> tuple[float, int]:
     assert target_s > 0.1, f"Target time must be greater than 0.1: {target_s}"
     def _run_once() -> None:
         result = sampler.sample(num_samples)
@@ -70,11 +66,9 @@ def _time_sample(sampler: vMF, num_samples: int, target_s: float, repeats: int) 
 
     # Adjust the number of calls to target the desired time.
     number = int(max(1, math.ceil(target_s / per_call)))
-    times = timer.repeat(repeat=repeats, number=number)
-    per_call_times = [t / number for t in times]
-    mean = statistics.mean(per_call_times)
-    std = statistics.stdev(per_call_times) if len(per_call_times) > 1 else 0.0
-    return mean, std
+    total_time = timer.timeit(number=number)
+    per_call_time = total_time / number
+    return per_call_time, number
 
 
 def _run_backend(
@@ -91,14 +85,18 @@ def _run_backend(
         for dim in dims:
             mu = make_mu(dim, dtype)
             for seed in seeds:
+                kwargs = extra_kwargs(dtype)
                 sampler = vMF(
                     dim=dim,
                     mu=mu,
                     kappa=kappa,
                     seed=seed,
-                    **extra_kwargs(dtype),
+                    **kwargs,
                 )
-                mean_s, std_s = _time_sample(sampler, NUM_SAMPLES, TARGET_TIME_S, TIMEIT_REPEATS)
+                time_s, number = _time_sample(sampler, NUM_SAMPLES, TARGET_TIME_S)
+                device = None
+                if "device" in kwargs and kwargs["device"] is not None:
+                    device = getattr(kwargs["device"], "type", str(kwargs["device"]))
                 on_row(
                     {
                         "backend": backend,
@@ -106,8 +104,11 @@ def _run_backend(
                         "dim": dim,
                         "kappa": kappa,
                         "seed": seed,
-                        "time_s_mean": mean_s,
-                        "time_s_std": std_s,
+                        "time_s": time_s,
+                        "number": number,
+                        "uses_householder": "hh" in backend,
+                        "inplace": "inplace" in backend,
+                        "device": device,
                     }
                 )
 
@@ -153,7 +154,10 @@ def _write_csv_row(path: Path, row: dict[str, Any]) -> None:
 
 def _init_db(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA busy_timeout=30000;")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS benchmark_results (
@@ -162,8 +166,11 @@ def _init_db(db_path: Path) -> sqlite3.Connection:
             dim INTEGER NOT NULL,
             kappa REAL NOT NULL,
             seed INTEGER NOT NULL,
-            time_s_mean REAL NOT NULL,
-            time_s_std REAL NOT NULL
+            time_s REAL NOT NULL,
+            number INTEGER NOT NULL,
+            uses_householder INTEGER NOT NULL,
+            inplace INTEGER NOT NULL,
+            device TEXT
         )
         """
     )
@@ -175,8 +182,8 @@ def _write_db_row(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
     conn.execute(
         """
         INSERT INTO benchmark_results
-        (backend, dtype, dim, kappa, seed, time_s_mean, time_s_std)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        (backend, dtype, dim, kappa, seed, time_s, number, uses_householder, inplace, device)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             row["backend"],
@@ -184,8 +191,11 @@ def _write_db_row(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
             int(row["dim"]),
             float(row["kappa"]),
             int(row["seed"]),
-            float(row["time_s_mean"]),
-            float(row["time_s_std"]),
+            float(row["time_s"]),
+            int(row["number"]),
+            int(bool(row["uses_householder"])),
+            int(bool(row["inplace"])),
+            row["device"],
         ),
     )
     conn.commit()
@@ -334,8 +344,8 @@ def main() -> None:
 
     grouped = df.groupby(level=["backend", "dtype", "dim", "kappa"])
     stats = grouped.agg(
-        time_s_mean=("time_s_mean", "mean"),
-        time_s_std=("time_s_mean", "std"),
+        time_s_mean=("time_s", "mean"),
+        time_s_std=("time_s", "std"),
     )
 
     if DISPLAY_MEAN_STD:
