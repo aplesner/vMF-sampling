@@ -94,7 +94,7 @@ def _run_backend(
                     **kwargs,
                 )
                 time_s, number = _time_sample(sampler, NUM_SAMPLES, TARGET_TIME_S)
-                device = None
+                device = "cpu"
                 if "device" in kwargs and kwargs["device"] is not None:
                     device = getattr(kwargs["device"], "type", str(kwargs["device"]))
                 on_row(
@@ -109,6 +109,7 @@ def _run_backend(
                         "uses_householder": "hh" in backend,
                         "inplace": "inplace" in backend,
                         "device": device,
+                        "num_samples": NUM_SAMPLES,
                     }
                 )
 
