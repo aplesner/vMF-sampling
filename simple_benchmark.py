@@ -12,7 +12,7 @@ import pandas as pd
 import tqdm
 
 from src.vmf import vMF
-from src.vmf_numpy import DTYPES as NUMPY_DTYPES
+# from src.vmf_numpy import DTYPES as NUMPY_DTYPES
 from src.vmf_scipy import DTYPES as SCIPY_DTYPES
 
 try:
@@ -22,11 +22,12 @@ except ImportError:
     torch = None
     TORCH_DTYPES = []
 
-DEFAULT_SEEDS = [0, 1, 2, 3, 4]
-DEFAULT_DIMS = [2**power for power in range(1, 10)]
+DEFAULT_SEEDS = [0, 1]
+DEFAULT_DIMS = [2048, 4096]
 NUM_SAMPLES = 5_000
-TARGET_TIME_S = 5.0
 KAPPA = 50
+NUMPY_DTYPES = [np.float32]
+TORCH_DTYPES = [torch.float32]
 
 AGGREGATE_SEEDS = True
 DISPLAY_MEAN_STD = True
@@ -39,19 +40,23 @@ def _make_mu_numpy(dim: int, dtype: np.dtype) -> np.ndarray:
     return mu
 
 
-def _make_mu_torch(dim: int, dtype: torch.dtype, device: torch.device) -> torch.Tensor:
-    mu = torch.zeros((dim,), device=device, dtype=dtype)
+def _make_mu_torch(dim: int, dtype: torch.dtype) -> torch.Tensor:
+    mu = torch.zeros((dim,), device="cpu", dtype=dtype)
+    mu[-1] = 1.0
+    return mu
+
+def _make_mu_torch_cuda(dim: int, dtype: torch.dtype) -> torch.Tensor:
+    mu = torch.zeros((dim,), device="cuda", dtype=dtype)
     mu[-1] = 1.0
     return mu
 
 
-def _time_sample(sampler: vMF, num_samples: int, target_s: float) -> tuple[float, int]:
-    assert target_s > 0.1, f"Target time must be greater than 0.1: {target_s}"
+def _time_sampling(sampler: vMF) -> float:
     def _run_once() -> None:
         if hasattr(sampler, "rotmatrix") and sampler.rotmatrix is not None:
             sampler.rotmatrix = None
             sampler.rotsign = None
-        result = sampler.sample(num_samples)
+        result = sampler.sample(NUM_SAMPLES)
         if torch is not None and isinstance(result, torch.Tensor) and result.is_cuda:
             torch.cuda.synchronize(result.device)
 
@@ -65,13 +70,9 @@ def _time_sample(sampler: vMF, num_samples: int, target_s: float) -> tuple[float
     number, total_time = timer.autorange()
     if number < 1 or total_time <= 0:
         raise ValueError(f"Number of calls is less than 1 or total time is less than or equal to 0: {number}, {total_time}")
-    per_call = total_time / number
-
-    # Adjust the number of calls to target the desired time.
-    number = int(max(1, math.ceil(target_s / per_call)))
-    total_time = timer.timeit(number=number)
     per_call_time = total_time / number
-    return per_call_time, number
+
+    return per_call_time
 
 
 def _run_backend(
@@ -87,6 +88,7 @@ def _run_backend(
     for dtype in tqdm.tqdm(dtypes, desc=f"Running benchmark for {backend}"):
         for dim in dims:
             mu = make_mu(dim, dtype)
+            
             for seed in seeds:
                 kwargs = extra_kwargs(dtype)
                 sampler = vMF(
@@ -96,7 +98,7 @@ def _run_backend(
                     seed=seed,
                     **kwargs,
                 )
-                time_s, number = _time_sample(sampler, NUM_SAMPLES, TARGET_TIME_S)
+                time_s = _time_sampling(sampler)
                 device = "cpu"
                 if "device" in kwargs and kwargs["device"] is not None:
                     device = getattr(kwargs["device"], "type", str(kwargs["device"]))
@@ -108,7 +110,6 @@ def _run_backend(
                         "kappa": kappa,
                         "seed": seed,
                         "time_s": time_s,
-                        "number": number,
                         "uses_householder": "hh" in backend,
                         "inplace": "inplace" in backend,
                         "device": device,
@@ -156,29 +157,14 @@ def _write_csv_row(path: Path, row: dict[str, Any]) -> None:
         handle.flush()
 
 
-def _backend_group(name: str) -> str:
-    if name.startswith("numpy"):
-        return "numpy"
-    if name.startswith("scipy"):
-        return "scipy"
-    if name.startswith("torch"):
-        return "torch"
-    return name
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Benchmark vMF samplers.")
     parser.add_argument("--dim", type=int, help="Run a single dimension.")
     parser.add_argument("--dims", type=_parse_int_list, help="Comma-separated dimensions.")
     parser.add_argument("--dims-range", type=_parse_dims_range, help="Range start:end(:step).")
+    parser.add_argument("--seeds", type=_parse_int_list, default=None, help="Comma-separated seeds.")
     parser.add_argument("--kappa", type=float, default=KAPPA, help="Kappa value.")
     parser.add_argument("--output", type=Path, help="CSV output path for incremental results.")
-    parser.add_argument(
-        "--backends",
-        type=lambda v: [item.strip() for item in v.split(",") if item.strip()],
-        default=None,
-        help="Comma-separated backend groups to run: numpy, scipy, torch.",
-    )
     parser.add_argument("--summary", action="store_true", help="Print summary table at end.")
     args = parser.parse_args()
 
@@ -191,7 +177,7 @@ def main() -> None:
     else:
         dims = DEFAULT_DIMS
 
-    seeds = DEFAULT_SEEDS
+    seeds = args.seeds if args.seeds is not None else DEFAULT_SEEDS
     kappa = args.kappa
 
     rows: list[dict[str, Any]] | None = [] if (args.summary or args.output is None) else None
@@ -221,61 +207,16 @@ def main() -> None:
             _make_mu_numpy,
             lambda dtype: {"backend": "numpy_hh", "dtype": dtype, "inplace": False},
         ),
-        ("scipy", SCIPY_DTYPES, _make_mu_numpy, lambda dtype: {"backend": "scipy", "dtype": dtype}),
+        ("torch", TORCH_DTYPES, _make_mu_torch, lambda dtype: {"backend": "torch", "dtype": dtype}),
+        ("torch_hh", TORCH_DTYPES, _make_mu_torch, lambda dtype: {"backend": "torch_hh", "dtype": dtype, "inplace": False}),
+        ("torch_hh_inplace", TORCH_DTYPES, _make_mu_torch, lambda dtype: {"backend": "torch_hh", "dtype": dtype, "inplace": True}),
+        ("torch_cuda", TORCH_DTYPES, _make_mu_torch_cuda, lambda dtype: {"backend": "torch", "dtype": dtype, "device": torch.device("cuda")}),
+        ("torch_cuda_hh", TORCH_DTYPES, _make_mu_torch_cuda, lambda dtype: {"backend": "torch_hh", "dtype": dtype, "inplace": False, "device": torch.device("cuda")}),
+        ("torch_cuda_hh_inplace", TORCH_DTYPES, _make_mu_torch_cuda, lambda dtype: {"backend": "torch_hh", "dtype": dtype, "inplace": True, "device": torch.device("cuda")}),
     ]
-    if torch is not None:
-        for device in devices:
-            device_label = device.type
-            # (
-            #     f"torch_{device_label}",
-            #     TORCH_DTYPES,
-            #     lambda dim, dtype, d=device: _make_mu_torch(dim, dtype, d),
-            #     lambda dtype, d=device: {"backend": "torch", "device": d, "dtype": dtype},
-            # ),
-            backends.extend(
-                [
-                    (
-                        f"torch_{device_label}",
-                        TORCH_DTYPES,
-                        lambda dim, dtype: _make_mu_torch(dim, dtype, device=device),
-                        lambda dtype: {
-                            "backend": "torch",
-                            "device": device,
-                            "dtype": dtype,
-                        },
-                    ),
-                    (
-                        f"torch_hh_inplace_{device_label}",
-                        TORCH_DTYPES,
-                        lambda dim, dtype: _make_mu_torch(dim, dtype, device=device),
-                        lambda dtype: {
-                            "backend": "torch_hh",
-                            "device": device,
-                            "dtype": dtype,
-                            "inplace": True,
-                        },
-                    ),
-                    (
-                        f"torch_hh_{device_label}",
-                        TORCH_DTYPES,
-                        lambda dim, dtype: _make_mu_torch(dim, dtype, device=device),
-                        lambda dtype: {
-                            "backend": "torch_hh",
-                            "device": device,
-                            "dtype": dtype,
-                            "inplace": False,
-                        },
-                    ),
-                ]
-            )
-    backend_filter = None
-    if args.backends is not None:
-        backend_filter = {item.lower() for item in args.backends}
 
     for backend, dtypes, make_mu, extra_kwargs in backends:
         if torch is None and backend.startswith("torch"):
-            continue
-        if backend_filter is not None and _backend_group(backend) not in backend_filter:
             continue
         _run_backend(backend, dtypes, make_mu, extra_kwargs, dims, seeds, kappa, on_row)
 
