@@ -16,6 +16,7 @@ LOCK="/scratch/$USER/venvs/vmf-sampling.lock"
 
 # Use uv cache in scratch (per node)
 export UV_CACHE_DIR="/scratch/$USER/uv-cache-vmf-sampling"
+mkdir -p "${VENV_DIR}"
 
 # Compute requirements hash from uv.lock if present, else pyproject
 if [ -f /home/aplesner/code/vMF-sampling/uv.lock ]; then
