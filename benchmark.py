@@ -3,8 +3,6 @@ from __future__ import annotations
 import argparse
 import csv
 import math
-import sqlite3
-import time
 import timeit
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -33,8 +31,6 @@ KAPPA = 50
 AGGREGATE_SEEDS = True
 DISPLAY_MEAN_STD = True
 
-DB_MAX_RETRIES = 8
-DB_RETRY_BASE_S = 0.2
 
 
 def _make_mu_numpy(dim: int, dtype: np.dtype) -> np.ndarray:
@@ -157,70 +153,6 @@ def _write_csv_row(path: Path, row: dict[str, Any]) -> None:
         handle.flush()
 
 
-def _init_db(db_path: Path) -> sqlite3.Connection:
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path, timeout=30.0)
-    try:
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA synchronous=NORMAL;")
-    except sqlite3.OperationalError:
-        conn.execute("PRAGMA journal_mode=DELETE;")
-        conn.execute("PRAGMA synchronous=FULL;")
-    conn.execute("PRAGMA busy_timeout=30000;")
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS benchmark_results (
-            backend TEXT NOT NULL,
-            dtype TEXT NOT NULL,
-            dim INTEGER NOT NULL,
-            kappa REAL NOT NULL,
-            seed INTEGER NOT NULL,
-            time_s REAL NOT NULL,
-            number INTEGER NOT NULL,
-            uses_householder INTEGER NOT NULL,
-            inplace INTEGER NOT NULL,
-            device TEXT
-        )
-        """
-    )
-    conn.commit()
-    return conn
-
-
-def _write_db_row(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
-    payload = (
-        row["backend"],
-        row["dtype"],
-        int(row["dim"]),
-        float(row["kappa"]),
-        int(row["seed"]),
-        float(row["time_s"]),
-        int(row["number"]),
-        int(bool(row["uses_householder"])),
-        int(bool(row["inplace"])),
-        row["device"],
-    )
-    for attempt in range(DB_MAX_RETRIES):
-        try:
-            conn.execute(
-                """
-                INSERT INTO benchmark_results
-                (backend, dtype, dim, kappa, seed, time_s, number, uses_householder, inplace, device)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                payload,
-            )
-            conn.commit()
-            return
-        except sqlite3.OperationalError as exc:
-            message = str(exc).lower()
-            if "locked" not in message and "busy" not in message:
-                raise
-            if attempt == DB_MAX_RETRIES - 1:
-                return
-            time.sleep(DB_RETRY_BASE_S * (2**attempt))
-
-
 def _backend_group(name: str) -> str:
     if name.startswith("numpy"):
         return "numpy"
@@ -239,7 +171,6 @@ def main() -> None:
     parser.add_argument("--seeds", type=_parse_int_list, default=None, help="Comma-separated seeds.")
     parser.add_argument("--kappa", type=float, default=KAPPA, help="Kappa value.")
     parser.add_argument("--output", type=Path, help="CSV output path for incremental results.")
-    parser.add_argument("--db", type=Path, help="SQLite DB path for incremental results.")
     parser.add_argument(
         "--backends",
         type=lambda v: [item.strip() for item in v.split(",") if item.strip()],
@@ -261,13 +192,10 @@ def main() -> None:
     seeds = args.seeds if args.seeds is not None else DEFAULT_SEEDS
     kappa = args.kappa
 
-    rows: list[dict[str, Any]] | None = [] if (args.summary or (args.output is None and args.db is None)) else None
-    db_conn = _init_db(args.db) if args.db is not None else None
+    rows: list[dict[str, Any]] | None = [] if (args.summary or args.output is None) else None
     def on_row(row: dict[str, Any]) -> None:
         if args.output is not None:
             _write_csv_row(args.output, row)
-        if db_conn is not None:
-            _write_db_row(db_conn, row)
         if rows is not None:
             rows.append(row)
 
@@ -348,9 +276,6 @@ def main() -> None:
         if backend_filter is not None and _backend_group(backend) not in backend_filter:
             continue
         _run_backend(backend, dtypes, make_mu, extra_kwargs, dims, seeds, kappa, on_row)
-
-    if db_conn is not None:
-        db_conn.close()
 
     if rows is None:
         return
