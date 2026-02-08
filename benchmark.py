@@ -4,6 +4,7 @@ import argparse
 import csv
 import math
 import sqlite3
+import time
 import timeit
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -31,6 +32,9 @@ KAPPA = 50
 
 AGGREGATE_SEEDS = True
 DISPLAY_MEAN_STD = True
+
+DB_MAX_RETRIES = 8
+DB_RETRY_BASE_S = 0.2
 
 
 def _make_mu_numpy(dim: int, dtype: np.dtype) -> np.ndarray:
@@ -156,8 +160,12 @@ def _write_csv_row(path: Path, row: dict[str, Any]) -> None:
 def _init_db(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, timeout=30.0)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
+    try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+    except sqlite3.OperationalError:
+        conn.execute("PRAGMA journal_mode=DELETE;")
+        conn.execute("PRAGMA synchronous=FULL;")
     conn.execute("PRAGMA busy_timeout=30000;")
     conn.execute(
         """
@@ -180,26 +188,37 @@ def _init_db(db_path: Path) -> sqlite3.Connection:
 
 
 def _write_db_row(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
-    conn.execute(
-        """
-        INSERT INTO benchmark_results
-        (backend, dtype, dim, kappa, seed, time_s, number, uses_householder, inplace, device)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            row["backend"],
-            row["dtype"],
-            int(row["dim"]),
-            float(row["kappa"]),
-            int(row["seed"]),
-            float(row["time_s"]),
-            int(row["number"]),
-            int(bool(row["uses_householder"])),
-            int(bool(row["inplace"])),
-            row["device"],
-        ),
+    payload = (
+        row["backend"],
+        row["dtype"],
+        int(row["dim"]),
+        float(row["kappa"]),
+        int(row["seed"]),
+        float(row["time_s"]),
+        int(row["number"]),
+        int(bool(row["uses_householder"])),
+        int(bool(row["inplace"])),
+        row["device"],
     )
-    conn.commit()
+    for attempt in range(DB_MAX_RETRIES):
+        try:
+            conn.execute(
+                """
+                INSERT INTO benchmark_results
+                (backend, dtype, dim, kappa, seed, time_s, number, uses_householder, inplace, device)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                payload,
+            )
+            conn.commit()
+            return
+        except sqlite3.OperationalError as exc:
+            message = str(exc).lower()
+            if "locked" not in message and "busy" not in message:
+                raise
+            if attempt == DB_MAX_RETRIES - 1:
+                return
+            time.sleep(DB_RETRY_BASE_S * (2**attempt))
 
 
 def _backend_group(name: str) -> str:
