@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import argparse
+import csv
 import math
+import sqlite3
 import statistics
 import timeit
-from typing import Any
+from pathlib import Path
+from typing import Any, Callable, Iterable
 
 import numpy as np
 import pandas as pd
@@ -20,12 +24,14 @@ except ImportError:
     torch = None
     TORCH_DTYPES = []
 
-SEED = 0
-DIMS = [512]
-KAPPAS = [50.0]
+DEFAULT_SEEDS = [0, 1, 2, 3, 4]
+DEFAULT_DIMS = [2**power for power in range(1, 14)]
+DEFAULT_KAPPAS = [50.0]
 NUM_SAMPLES = 5_000
 TARGET_TIME_S = 5.0
-TIMEIT_REPEATS = 3
+TIMEIT_REPEATS = 1
+
+KAPPA = 500
 
 AGGREGATE_SEEDS = True
 DISPLAY_MEAN_STD = True
@@ -76,31 +82,34 @@ def _run_backend(
     dtypes: list[Any],
     make_mu,
     extra_kwargs,
-) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
+    dims: Iterable[int],
+    seeds: Iterable[int],
+    kappa: float,
+    on_row: Callable[[dict[str, Any]], None],
+) -> None:
     for dtype in tqdm.tqdm(dtypes, desc=f"Running benchmark for {backend}"):
-        for dim in DIMS:
+        for dim in dims:
             mu = make_mu(dim, dtype)
-            for kappa in KAPPAS:
+            for seed in seeds:
                 sampler = vMF(
                     dim=dim,
                     mu=mu,
                     kappa=kappa,
-                    seed=SEED,
+                    seed=seed,
                     **extra_kwargs(dtype),
                 )
                 mean_s, std_s = _time_sample(sampler, NUM_SAMPLES, TARGET_TIME_S, TIMEIT_REPEATS)
-                rows.append(
+                on_row(
                     {
                         "backend": backend,
                         "dtype": str(dtype),
                         "dim": dim,
                         "kappa": kappa,
+                        "seed": seed,
                         "time_s_mean": mean_s,
                         "time_s_std": std_s,
                     }
                 )
-    return rows
 
 
 def _format_mean_std(df: pd.DataFrame) -> pd.DataFrame:
@@ -110,8 +119,127 @@ def _format_mean_std(df: pd.DataFrame) -> pd.DataFrame:
     return df.assign(time_s=formatted).drop(columns=["time_s_mean", "time_s_std"])
 
 
+def _parse_int_list(value: str) -> list[int]:
+    return [int(item) for item in value.split(",") if item]
+
+
+def _parse_float_list(value: str) -> list[float]:
+    return [float(item) for item in value.split(",") if item]
+
+
+def _parse_dims_range(value: str) -> list[int]:
+    parts = [int(part) for part in value.split(":") if part]
+    if len(parts) not in (2, 3):
+        raise ValueError("dims-range must be start:end or start:end:step")
+    start, end = parts[0], parts[1]
+    step = parts[2] if len(parts) == 3 else 1
+    if step <= 0:
+        raise ValueError("dims-range step must be positive")
+    if end < start:
+        raise ValueError("dims-range end must be >= start")
+    return list(range(start, end + 1, step))
+
+
+def _write_csv_row(path: Path, row: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_header = not path.exists()
+    with path.open("a", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(row.keys()))
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
+        handle.flush()
+
+
+def _init_db(db_path: Path) -> sqlite3.Connection:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS benchmark_results (
+            backend TEXT NOT NULL,
+            dtype TEXT NOT NULL,
+            dim INTEGER NOT NULL,
+            kappa REAL NOT NULL,
+            seed INTEGER NOT NULL,
+            time_s_mean REAL NOT NULL,
+            time_s_std REAL NOT NULL
+        )
+        """
+    )
+    conn.commit()
+    return conn
+
+
+def _write_db_row(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
+    conn.execute(
+        """
+        INSERT INTO benchmark_results
+        (backend, dtype, dim, kappa, seed, time_s_mean, time_s_std)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            row["backend"],
+            row["dtype"],
+            int(row["dim"]),
+            float(row["kappa"]),
+            int(row["seed"]),
+            float(row["time_s_mean"]),
+            float(row["time_s_std"]),
+        ),
+    )
+    conn.commit()
+
+
+def _backend_group(name: str) -> str:
+    if name.startswith("numpy"):
+        return "numpy"
+    if name.startswith("scipy"):
+        return "scipy"
+    if name.startswith("torch"):
+        return "torch"
+    return name
+
+
 def main() -> None:
-    rows: list[dict[str, Any]] = []
+    parser = argparse.ArgumentParser(description="Benchmark vMF samplers.")
+    parser.add_argument("--dim", type=int, help="Run a single dimension.")
+    parser.add_argument("--dims", type=_parse_int_list, help="Comma-separated dimensions.")
+    parser.add_argument("--dims-range", type=_parse_dims_range, help="Range start:end(:step).")
+    parser.add_argument("--seeds", type=_parse_int_list, default=None, help="Comma-separated seeds.")
+    parser.add_argument("--kappa", type=float, default=KAPPA, help="Kappa value.")
+    parser.add_argument("--output", type=Path, help="CSV output path for incremental results.")
+    parser.add_argument("--db", type=Path, help="SQLite DB path for incremental results.")
+    parser.add_argument(
+        "--backends",
+        type=lambda v: [item.strip() for item in v.split(",") if item.strip()],
+        default=None,
+        help="Comma-separated backend groups to run: numpy, scipy, torch.",
+    )
+    parser.add_argument("--summary", action="store_true", help="Print summary table at end.")
+    args = parser.parse_args()
+
+    if args.dim is not None:
+        dims = [args.dim]
+    elif args.dims is not None:
+        dims = args.dims
+    elif args.dims_range is not None:
+        dims = args.dims_range
+    else:
+        dims = DEFAULT_DIMS
+
+    seeds = args.seeds if args.seeds is not None else DEFAULT_SEEDS
+    kappa = args.kappa
+
+    rows: list[dict[str, Any]] | None = [] if (args.summary or (args.output is None and args.db is None)) else None
+    db_conn = _init_db(args.db) if args.db is not None else None
+    def on_row(row: dict[str, Any]) -> None:
+        if args.output is not None:
+            _write_csv_row(args.output, row)
+        if db_conn is not None:
+            _write_db_row(db_conn, row)
+        if rows is not None:
+            rows.append(row)
 
     devices: list[torch.device] = []
     if torch is not None:
@@ -147,12 +275,22 @@ def main() -> None:
             backends.extend(
                 [
                     (
+                        f"torch_{device_label}",
+                        TORCH_DTYPES,
+                        lambda dim, dtype: _make_mu_torch(dim, dtype, device=device),
+                        lambda dtype: {
+                            "backend": "torch",
+                            "device": device,
+                            "dtype": dtype,
+                        },
+                    ),
+                    (
                         f"torch_hh_inplace_{device_label}",
                         TORCH_DTYPES,
-                        lambda dim, dtype, d=device: _make_mu_torch(dim, dtype, d),
-                        lambda dtype, d=device: {
+                        lambda dim, dtype: _make_mu_torch(dim, dtype, device=device),
+                        lambda dtype: {
                             "backend": "torch_hh",
-                            "device": d,
+                            "device": device,
                             "dtype": dtype,
                             "inplace": True,
                         },
@@ -160,31 +298,49 @@ def main() -> None:
                     (
                         f"torch_hh_{device_label}",
                         TORCH_DTYPES,
-                        lambda dim, dtype, d=device: _make_mu_torch(dim, dtype, d),
-                        lambda dtype, d=device: {
+                        lambda dim, dtype: _make_mu_torch(dim, dtype, device=device),
+                        lambda dtype: {
                             "backend": "torch_hh",
-                            "device": d,
+                            "device": device,
                             "dtype": dtype,
                             "inplace": False,
                         },
                     ),
                 ]
             )
+    backend_filter = None
+    if args.backends is not None:
+        backend_filter = {item.lower() for item in args.backends}
+
     for backend, dtypes, make_mu, extra_kwargs in backends:
         if torch is None and backend.startswith("torch"):
             continue
-        rows.extend(_run_backend(backend, dtypes, make_mu, extra_kwargs))
+        if backend_filter is not None and _backend_group(backend) not in backend_filter:
+            continue
+        _run_backend(backend, dtypes, make_mu, extra_kwargs, dims, seeds, kappa, on_row)
+
+    if db_conn is not None:
+        db_conn.close()
+
+    if rows is None:
+        return
 
     df = pd.DataFrame(rows)
-    df = df.set_index(["backend", "dtype", "dim", "kappa"]).sort_index()
+    df = df.set_index(["backend", "dtype", "dim", "kappa", "seed"]).sort_index()
 
     if not AGGREGATE_SEEDS:
         print(df)
         return
 
+    grouped = df.groupby(level=["backend", "dtype", "dim", "kappa"])
+    stats = grouped.agg(
+        time_s_mean=("time_s_mean", "mean"),
+        time_s_std=("time_s_mean", "std"),
+    )
+
     if DISPLAY_MEAN_STD:
-        df = _format_mean_std(df)
-    print(df)
+        stats = _format_mean_std(stats)
+    print(stats)
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ class TorchvMFHH(vMFSampler):
         device: str | torch.device | None = None,
         dtype: torch.dtype | None = None,
         inplace: bool = True,
+        make_copy: bool = False,
     ) -> None:
         if dtype is not None:
             if dtype not in DTYPES:
@@ -36,6 +37,7 @@ class TorchvMFHH(vMFSampler):
 
         super().__init__(dim, mu=mu, kappa=kappa, seed=seed, rotation_needed=rotation_needed)
         self.inplace = inplace
+        self.make_copy = make_copy
 
     def _verify_mu(self, mu: torch.Tensor) -> None:
         if not isinstance(mu, torch.Tensor):
@@ -109,7 +111,7 @@ class TorchvMFHH(vMFSampler):
 
     def _rotate_samples(self, samples: torch.Tensor) -> torch.Tensor:
         if self.inplace:
-            return self._rotate_householder_inplace(samples.clone())
+            return self._rotate_householder_inplace(samples.clone() if self.make_copy else samples)
         return self._rotate_householder(samples)
 
     def _sample_uniform_direction(self, dim: int, size: int) -> torch.Tensor:

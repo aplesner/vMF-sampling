@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+import argparse
+import csv
+from pathlib import Path
+from typing import Any, Callable, Iterable
 
 import numpy as np
 import pandas as pd
 import tqdm
 
-SEEDS = [0, 1, 2]
+DEFAULT_SEEDS = [0, 1, 2, 3, 4]
 DIMS = [3, 4, 15, 16]
 DTYPES = [np.float32, np.float64]
 PROBE_SIZE = 100
-
-Y_IS_MINUS_X = True
 
 AGGREGATE_SEEDS = True
 DISPLAY_MEAN_STD = True
@@ -98,10 +99,15 @@ def measure_twist(
     return float(angle_deg.mean()), float(angle_deg.std())
 
 
-def _make_x_y(dim: int, dtype: np.dtype, rng: np.random.Generator) -> tuple[np.ndarray, np.ndarray]:
+def _make_x_y(
+    dim: int,
+    dtype: np.dtype,
+    rng: np.random.Generator,
+    y_is_minus_x: bool,
+) -> tuple[np.ndarray, np.ndarray]:
     x = np.zeros(dim, dtype=dtype)
     x[0] = 1.0
-    if Y_IS_MINUS_X:
+    if y_is_minus_x:
         y = -x
     else:
         y = rng.standard_normal(dim).astype(dtype, copy=False)
@@ -113,25 +119,30 @@ def _run_method(
     method: str,
     rotator: Callable[[np.ndarray, np.ndarray], Callable[[np.ndarray], np.ndarray]],
     dtypes: list[np.dtype],
+    dims: Iterable[int],
+    seeds: Iterable[int],
+    y_is_minus_x: bool,
+    on_row: Callable[[dict[str, Any]], None],
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for dtype in tqdm.tqdm(dtypes, desc=f"Running twist benchmark for {method}"):
-        for dim in DIMS:
-            for seed in SEEDS:
+        for dim in dims:
+            for seed in seeds:
                 rng = np.random.default_rng(seed)
-                x, y = _make_x_y(dim, dtype, rng)
+                x, y = _make_x_y(dim, dtype, rng, y_is_minus_x)
                 rotation = rotator(x, y)
                 twist_mean, twist_std = measure_twist(rotation, x, y, rng, PROBE_SIZE)
-                rows.append(
-                    {
-                        "method": method,
-                        "dtype": str(dtype),
-                        "dim": dim,
-                        "seed": seed,
-                        "twist_deg": twist_mean,
-                        "probe_std_deg": twist_std,
-                    }
-                )
+                row = {
+                    "method": method,
+                    "dtype": str(dtype),
+                    "dim": dim,
+                    "seed": seed,
+                    "mode": "y=-x" if y_is_minus_x else "y=random",
+                    "twist_deg": twist_mean,
+                    "probe_std_deg": twist_std,
+                }
+                on_row(row)
+                rows.append(row)
     return rows
 
 
@@ -142,24 +153,62 @@ def _format_mean_std(df: pd.DataFrame, label: str) -> pd.DataFrame:
     return df.assign(**{label: formatted}).drop(columns=[f"{label}_mean", f"{label}_std"])
 
 
+def _write_csv_row(path: Path, row: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_header = not path.exists()
+    with path.open("a", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(row.keys()))
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
+        handle.flush()
+
+
 def main() -> None:
-    rows: list[dict[str, Any]] = []
+    parser = argparse.ArgumentParser(description="Benchmark twist for rotations.")
+    parser.add_argument("--seeds", type=lambda v: [int(x) for x in v.split(",") if x], default=None)
+    parser.add_argument("--dims", type=lambda v: [int(x) for x in v.split(",") if x], default=None)
+    parser.add_argument(
+        "--mode",
+        choices=["y=-x", "y=random", "both"],
+        default="both",
+        help="Which y construction to use.",
+    )
+    parser.add_argument("--output", type=Path, help="CSV output path for incremental results.")
+    parser.add_argument("--summary", action="store_true", help="Print summary table at end.")
+    args = parser.parse_args()
+
+    seeds = args.seeds if args.seeds is not None else DEFAULT_SEEDS
+    dims = args.dims if args.dims is not None else DIMS
+    modes = [args.mode] if args.mode in ("y=-x", "y=random") else ["y=-x", "y=random"]
+
+    rows: list[dict[str, Any]] | None = [] if (args.summary or args.output is None) else None
+    def on_row(row: dict[str, Any]) -> None:
+        if args.output is not None:
+            _write_csv_row(args.output, row)
+        if rows is not None:
+            rows.append(row)
 
     methods = [
         ("householder", get_householder_rotation),
         ("qr", get_qr_rotation),
     ]
-    for method, rotator in methods:
-        rows.extend(_run_method(method, rotator, DTYPES))
+    for mode in modes:
+        y_is_minus_x = mode == "y=-x"
+        for method, rotator in methods:
+            _run_method(method, rotator, DTYPES, dims, seeds, y_is_minus_x, on_row)
+
+    if rows is None:
+        return
 
     df = pd.DataFrame(rows)
-    df = df.set_index(["method", "dtype", "dim", "seed"]).sort_index()
+    df = df.set_index(["method", "dtype", "dim", "seed", "mode"]).sort_index()
 
     if not AGGREGATE_SEEDS:
         print(df)
         return
 
-    grouped = df.groupby(level=["method", "dtype", "dim"])
+    grouped = df.groupby(level=["method", "dtype", "dim", "mode"])
     stats = grouped.agg(
         twist_deg_mean=("twist_deg", "mean"),
         twist_deg_std=("twist_deg", "std"),
