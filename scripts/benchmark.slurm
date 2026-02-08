@@ -6,7 +6,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --nodelist=tikgpu06,tikgpu07,tikgpu09
-#SBATCH --time=6:00:00
+#SBATCH --time=2:00:00
 #SBATCH --array=0-38%12
 
 set -euo pipefail
@@ -69,6 +69,4 @@ OUT_CSV="${OUT_DIR}/benchmark_${BACKEND}_dim${DIM}.csv"
 python3 /home/aplesner/code/vMF-sampling/benchmark.py \
   --dim "${DIM}" \
   --backends "${BACKEND}" \
-  --seeds 0,1,2,3,4 \
-  --kappa 50 \
   --output "${OUT_CSV}"
