@@ -63,7 +63,6 @@ BACKEND_INDEX=$((TASK_ID / ${#DIMS[@]}))
 DIM="${DIMS[$DIM_INDEX]}"
 BACKEND="${BACKENDS[$BACKEND_INDEX]}"
 OUT_DIR="/itet-stor/${USER}/net_scratch/jobs/vmf-sampling/benchmarks"
-OUT_DB="${OUT_DIR}/benchmark_shared.db"
 OUT_CSV="${OUT_DIR}/benchmark_${BACKEND}_dim${DIM}.csv"
 
 
@@ -72,5 +71,4 @@ python3 /home/aplesner/code/vMF-sampling/benchmark.py \
   --backends "${BACKEND}" \
   --seeds 0,1,2,3,4 \
   --kappa 50 \
-  --db "${OUT_DB}" \
   --output "${OUT_CSV}"
