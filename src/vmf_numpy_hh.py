@@ -16,6 +16,7 @@ class NumpyvMFHH(vMFSampler):
         rotation_needed: bool = True,
         dtype: np.dtype | None = None,
         inplace: bool = True,
+        make_copy: bool = False,
     ) -> None:
         if dtype is not None:
             if dtype not in DTYPES:
@@ -27,6 +28,7 @@ class NumpyvMFHH(vMFSampler):
         super().__init__(dim, mu=mu, kappa=kappa, seed=seed, rotation_needed=rotation_needed)
         self.random_state = np.random.default_rng(seed)
         self.inplace = inplace
+        self.make_copy = make_copy
 
     def _verify_mu(self, mu: np.ndarray) -> None:
         if not isinstance(mu, np.ndarray):
@@ -98,7 +100,7 @@ class NumpyvMFHH(vMFSampler):
 
     def _rotate_samples(self, samples: np.ndarray) -> np.ndarray:
         if self.inplace:
-            return self._rotate_householder_inplace(samples.copy())
+            return self._rotate_householder_inplace(samples.copy() if self.make_copy else samples)
         else:
             return self._rotate_householder(samples)
 
