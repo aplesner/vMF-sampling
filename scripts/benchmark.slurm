@@ -7,9 +7,50 @@
 #SBATCH --nodes=1
 #SBATCH --nodelist=tikgpu06,tikgpu07,tikgpu09
 #SBATCH --time=6:00:00
-#SBATCH --array=0-26%4
+#SBATCH --array=0-0%1
 
 set -euo pipefail
+
+VENV_DIR="/scratch/$USER/venvs/vmf-sampling"
+LOCK="/scratch/$USER/venvs/vmf-sampling.lock"
+
+# Use uv cache in scratch (per node)
+export UV_CACHE_DIR="/scratch/$USER/uv-cache-vmf-sampling"
+
+# Compute requirements hash from uv.lock if present, else pyproject
+if [ -f /home/aplesner/code/vMF-sampling/uv.lock ]; then
+  REQ_HASH="$(sha256sum /home/aplesner/code/vMF-sampling/uv.lock | awk '{print $1}')"
+else
+  REQ_HASH="$(sha256sum /home/aplesner/code/vMF-sampling/pyproject.toml | awk '{print $1}')"
+fi
+
+(
+  flock -n 9 || { echo "Waiting for venv lock..."; flock 9; }
+
+  NEED_REBUILD=0
+  if [ ! -d "${VENV_DIR}" ]; then
+    NEED_REBUILD=1
+  elif [ ! -f "${VENV_DIR}/.req_hash" ]; then
+    NEED_REBUILD=1
+  elif [ "$(cat "${VENV_DIR}/.req_hash")" != "${REQ_HASH}" ]; then
+    NEED_REBUILD=1
+  fi
+
+  if [ "${NEED_REBUILD}" -eq 1 ]; then
+    rm -rf "${VENV_DIR}"
+    uv venv "${VENV_DIR}"
+    source "${VENV_DIR}/bin/activate"
+    uv pip install numpy scipy pandas tqdm
+    uv pip install torch \
+      --index-url https://download.pytorch.org/whl/cu122 \
+      --extra-index-url https://pypi.org/simple
+    echo "${REQ_HASH}" > "${VENV_DIR}/.req_hash"
+  fi
+) 9>"${LOCK}"
+
+source "${VENV_DIR}/bin/activate"
+
+
 
 DIMS=(2 4 8 16 32 64 128 256 512)
 BACKENDS=(numpy scipy torch)
@@ -24,10 +65,8 @@ OUT_DIR="/itet-stor/${USER}/net_scratch/jobs/vmf-sampling/benchmarks"
 OUT_DB="${OUT_DIR}/benchmark_shared.db"
 OUT_CSV="${OUT_DIR}/benchmark_${BACKEND}_dim${DIM}.csv"
 
-# Activate your environment here if needed, e.g.:
-# source /path/to/venv/bin/activate
 
-python /home/aplesner/code/vMF-sampling/benchmark.py \
+python3 /home/aplesner/code/vMF-sampling/benchmark.py \
   --dim "${DIM}" \
   --backends "${BACKEND}" \
   --seeds 0,1,2,3,4 \
