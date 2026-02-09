@@ -237,8 +237,8 @@ def main() -> None:
                     (
                         f"torch_{device_label}",
                         TORCH_DTYPES,
-                        lambda dim, dtype: _make_mu_torch(dim, dtype, device=device),
-                        lambda dtype: {
+                        lambda dim, dtype, device=device: _make_mu_torch(dim, dtype, device=device),
+                        lambda dtype, device=device: {
                             "backend": "torch",
                             "device": device,
                             "dtype": dtype,
@@ -247,8 +247,8 @@ def main() -> None:
                     (
                         f"torch_hh_inplace_{device_label}",
                         TORCH_DTYPES,
-                        lambda dim, dtype: _make_mu_torch(dim, dtype, device=device),
-                        lambda dtype: {
+                        lambda dim, dtype, device=device: _make_mu_torch(dim, dtype, device=device),
+                        lambda dtype, device=device: {
                             "backend": "torch_hh",
                             "device": device,
                             "dtype": dtype,
@@ -258,8 +258,8 @@ def main() -> None:
                     (
                         f"torch_hh_{device_label}",
                         TORCH_DTYPES,
-                        lambda dim, dtype: _make_mu_torch(dim, dtype, device=device),
-                        lambda dtype: {
+                        lambda dim, dtype, device=device: _make_mu_torch(dim, dtype, device=device),
+                        lambda dtype, device=device: {
                             "backend": "torch_hh",
                             "device": device,
                             "dtype": dtype,
