@@ -85,6 +85,8 @@ def _run_backend(
     on_row: Callable[[dict[str, Any]], None],
 ) -> None:
     for dtype in tqdm.tqdm(dtypes, desc=f"Running benchmark for {backend}"):
+        if torch is not None and backend == "torch_cpu" and dtype in {torch.float16, torch.bfloat16}:
+            continue
         for dim in dims:
             mu = make_mu(dim, dtype)
             for seed in seeds:
