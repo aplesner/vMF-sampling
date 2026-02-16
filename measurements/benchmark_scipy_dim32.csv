@@ -1,0 +1,16 @@
+backend,dtype,dim,kappa,seed,time_s,number,uses_householder,inplace,device,num_samples
+scipy,<class 'numpy.float16'>,32,50,0,0.005544943549173102,905,False,False,cpu,5000
+scipy,<class 'numpy.float16'>,32,50,1,0.005483547820567247,914,False,False,cpu,5000
+scipy,<class 'numpy.float16'>,32,50,2,0.0055099120747962175,909,False,False,cpu,5000
+scipy,<class 'numpy.float16'>,32,50,3,0.005505713263971819,913,False,False,cpu,5000
+scipy,<class 'numpy.float16'>,32,50,4,0.005459965564894659,917,False,False,cpu,5000
+scipy,<class 'numpy.float32'>,32,50,0,0.00543736991413702,920,False,False,cpu,5000
+scipy,<class 'numpy.float32'>,32,50,1,0.005432867439742828,921,False,False,cpu,5000
+scipy,<class 'numpy.float32'>,32,50,2,0.005438372219562196,920,False,False,cpu,5000
+scipy,<class 'numpy.float32'>,32,50,3,0.005438637531018422,919,False,False,cpu,5000
+scipy,<class 'numpy.float32'>,32,50,4,0.005431872609788906,920,False,False,cpu,5000
+scipy,<class 'numpy.float64'>,32,50,0,0.005115908563400953,978,False,False,cpu,5000
+scipy,<class 'numpy.float64'>,32,50,1,0.00510332993469593,980,False,False,cpu,5000
+scipy,<class 'numpy.float64'>,32,50,2,0.005108571959148966,979,False,False,cpu,5000
+scipy,<class 'numpy.float64'>,32,50,3,0.005110470052094811,979,False,False,cpu,5000
+scipy,<class 'numpy.float64'>,32,50,4,0.0051051749418399356,980,False,False,cpu,5000
