@@ -12,10 +12,13 @@ All items from the original TODO are implemented:
   `num_samples / time_s` is size-independent at steady state, so per-backend
   sizes still compare apples-to-apples). `--num-samples 5000` reproduces the
   old fixed-size behavior.
-- **dim=2 / dim=3 closed forms** — all four samplers (`numpy`, `numpy_hh`,
-  `torch`, `torch_hh`) now dispatch to a von Mises path at dim 2 and the
-  inverse-CDF path at dim 3, like scipy. Measured locally: dim 2 at parity
-  with scipy (~13.6 M/s both), dim 3 within ~10% (18.5 vs 20.7 M/s).
+- **dim=2 / dim=3 closed forms** — all five samplers (`numpy`, `numpy_hh`,
+  `torch`, `torch_hh`, and `scipy`) now dispatch to a von Mises path at dim 2
+  and the inverse-CDF path at dim 3. `ScipyvMF` previously lacked the special
+  cases that real `scipy.stats.vonmises_fisher` ships (`_rvs_2d`/`_rvs_3d`),
+  so its dim-2/3 numbers understated scipy; it now mirrors them faithfully
+  (dim 2: 13.6 M/s, matching real scipy; dim 3: 17.4 vs 20.7 M/s). The repo
+  backends measure at parity: numpy 13.4/18–21 M/s, torch f32 ~33 M/s at dim 3.
 - **Single Householder reflection** — the hh backends drop the second flip;
   `u = (e1 − mu)/‖e1 − mu‖` maps e1 → mu directly (det = −1 is irrelevant for
   vMF; the antipodal special case is gone). Also fixed a pre-existing crash:

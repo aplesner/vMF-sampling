@@ -71,10 +71,46 @@ class ScipyvMF(vMFSampler):
         samples /= np.linalg.norm(samples, axis=-1, keepdims=True)
         return samples
 
+    def _sample_dim2(self, num_samples: int | tuple[int, ...], n_samples: int) -> np.ndarray:
+        """Closed-form: vMF on the circle reduces to the von Mises distribution (scipy _rvs_2d)."""
+        mean_angle = np.arctan2(self.mu[1], self.mu[0])
+        angles = self.random_state.vonmises(mean_angle, self.kappa, size=n_samples)
+        samples = np.stack([np.cos(angles), np.sin(angles)], axis=-1)
+        if isinstance(num_samples, (list, tuple)) and len(num_samples) > 1:
+            samples = samples.reshape(tuple(num_samples) + (2,))
+        return samples
+
+    def _sample_dim3(self, num_samples: int | tuple[int, ...], n_samples: int) -> np.ndarray:
+        """Closed-form inverse-CDF for the polar coordinate (scipy _rvs_3d).
+
+        Mirrors scipy faithfully: rotates to mu with a single Householder
+        reflection rather than this class's QR-based rotation matrix.
+        """
+        tiny = 1e-12
+        u = np.clip(self.random_state.random(n_samples), tiny, None)
+        x = 1.0 + np.log(u + (1.0 - u) * np.exp(-2.0 * self.kappa)) / self.kappa
+        t = np.sqrt(np.clip(1.0 - x**2, 0.0, None))
+        circ = self._sample_uniform_direction(dim=2, size=n_samples)
+        samples = np.concatenate([x[..., None], t[..., None] * circ], axis=1)
+        v = -np.asarray(self.mu, dtype=np.float64)
+        v = v.copy()
+        v[0] += 1.0
+        vnorm2 = v @ v
+        if vnorm2 > 1e-24:
+            samples -= np.outer((samples @ v) * (2.0 / vnorm2), v)
+        if isinstance(num_samples, (list, tuple)) and len(num_samples) > 1:
+            samples = samples.reshape(tuple(num_samples) + (3,))
+        return samples
+
     def _sample(self, num_samples: int | tuple[int, ...]) -> np.ndarray:
         dim = self.dim
         dim_minus_one = dim - 1
         n_samples = np.prod(num_samples) if np.iterable(num_samples) else num_samples
+
+        if dim == 2:
+            return self._sample_dim2(num_samples, int(n_samples))
+        if dim == 3:
+            return self._sample_dim3(num_samples, int(n_samples))
 
         sqrt = np.sqrt(4 * self.kappa**2 + dim_minus_one**2)
         envelop_param = (-2 * self.kappa + sqrt) / dim_minus_one
