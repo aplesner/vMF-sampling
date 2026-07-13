@@ -107,7 +107,8 @@ class TorchvMFHH(vMFSampler):
         S -= torch.outer(S_dot, u1)
         S_dot = torch.mv(S, u2)
         S_dot.mul_(2)
-        return S - torch.outer(S_dot, u2)
+        S.sub_(torch.outer(S_dot, u2))
+        return S
 
     def _rotate_samples(self, samples: torch.Tensor) -> torch.Tensor:
         if self.inplace:

@@ -96,7 +96,8 @@ class NumpyvMFHH(vMFSampler):
         np.dot(S, u2, out=S_dot)
         np.multiply(2, S_dot, out=S_dot)
         np.outer(S_dot, u2, out=S_outer)
-        return S - S_outer
+        np.subtract(S, S_outer, out=S)
+        return S
 
     def _rotate_samples(self, samples: np.ndarray) -> np.ndarray:
         if self.inplace:
