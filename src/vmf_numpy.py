@@ -73,50 +73,77 @@ class NumpyvMF(vMFSampler):
         samples /= np.linalg.norm(samples, axis=-1, keepdims=True)
         return samples
 
+    def _sample_dim2(self, num_samples: int | tuple[int, ...], n_samples: int) -> np.ndarray:
+        """Closed-form: vMF on the circle reduces to the von Mises distribution."""
+        mean_angle = np.arctan2(self.mu[1], self.mu[0])
+        angles = self.random_state.vonmises(mean_angle, self.kappa, size=n_samples)
+        samples = np.stack([np.cos(angles), np.sin(angles)], axis=-1)
+        if isinstance(num_samples, (list, tuple)) and len(num_samples) > 1:
+            samples = samples.reshape(tuple(num_samples) + (2,))
+        return samples
+
+    def _sample_dim3(self, n_samples: int) -> tuple[np.ndarray, np.ndarray]:
+        """Closed-form inverse-CDF for the polar coordinate about the north pole."""
+        tiny = 1e-12
+        u = self.random_state.random(n_samples)
+        u = np.clip(u, tiny, None)
+        x = 1.0 + np.log(u + (1.0 - u) * np.exp(-2.0 * self.kappa)) / self.kappa
+        t = np.sqrt(np.clip(1.0 - x**2, 0.0, None))
+        circ = self._sample_uniform_direction(dim=2, size=n_samples)
+        coord_rest = t[..., None] * circ
+        return x, coord_rest
+
     def _sample(self, num_samples: int | tuple[int, ...]) -> np.ndarray:
         dim = self.dim
         dim_minus_one = dim - 1
         n_samples = np.prod(num_samples) if np.iterable(num_samples) else num_samples
 
-        sqrt = np.sqrt(4 * self.kappa**2 + dim_minus_one**2)
-        envelop_param = (-2 * self.kappa + sqrt) / dim_minus_one
-        if envelop_param == 0:
-            envelop_param = (dim_minus_one / 4 * self.kappa**-1 - dim_minus_one**3 / 64 * self.kappa**-3)
+        if dim == 2:
+            return self._sample_dim2(num_samples, int(n_samples))
 
-        node = (1.0 - envelop_param) / (1.0 + envelop_param)
-        correction = self.kappa * node + dim_minus_one * (
-            np.log(4) + np.log(envelop_param) - 2 * np.log1p(envelop_param)
-        )
+        if dim == 3:
+            x, coord_rest = self._sample_dim3(int(n_samples))
+        else:
+            sqrt = np.sqrt(4 * self.kappa**2 + dim_minus_one**2)
+            envelop_param = (-2 * self.kappa + sqrt) / dim_minus_one
+            if envelop_param == 0:
+                envelop_param = (dim_minus_one / 4 * self.kappa**-1 - dim_minus_one**3 / 64 * self.kappa**-3)
 
-        n_accepted = 0
-        x = np.zeros((n_samples,))
-        halfdim = 0.5 * dim_minus_one
-
-        while n_accepted < n_samples:
-            remaining = n_samples - n_accepted
-            sym_beta = self.random_state.beta(halfdim, halfdim, size=remaining)
-            coord_x = (1 - (1 + envelop_param) * sym_beta) / (1 - (1 - envelop_param) * sym_beta)
-            accept_tol = self.random_state.random(remaining)
-            criterion = (
-                self.kappa * coord_x
-                + dim_minus_one
-                * (
-                    np.log((1 + envelop_param - coord_x + coord_x * envelop_param) / (1 + envelop_param))
-                )
-                - correction
-                > np.log(accept_tol)
+            node = (1.0 - envelop_param) / (1.0 + envelop_param)
+            correction = self.kappa * node + dim_minus_one * (
+                np.log(4) + np.log(envelop_param) - 2 * np.log1p(envelop_param)
             )
-            accepted_iter = int(np.sum(criterion))
-            x[n_accepted : n_accepted + accepted_iter] = coord_x[criterion]
-            n_accepted += accepted_iter
 
-        coord_rest = self._sample_uniform_direction(dim=dim_minus_one, size=int(n_samples))
-        coord_rest = np.einsum("...,...i->...i", np.sqrt(1 - x**2), coord_rest)
+            n_accepted = 0
+            x = np.zeros((n_samples,))
+            halfdim = 0.5 * dim_minus_one
+
+            while n_accepted < n_samples:
+                remaining = n_samples - n_accepted
+                sym_beta = self.random_state.beta(halfdim, halfdim, size=remaining)
+                coord_x = (1 - (1 + envelop_param) * sym_beta) / (1 - (1 - envelop_param) * sym_beta)
+                accept_tol = self.random_state.random(remaining)
+                criterion = (
+                    self.kappa * coord_x
+                    + dim_minus_one
+                    * (
+                        np.log((1 + envelop_param - coord_x + coord_x * envelop_param) / (1 + envelop_param))
+                    )
+                    - correction
+                    > np.log(accept_tol)
+                )
+                accepted_iter = int(np.sum(criterion))
+                x[n_accepted : n_accepted + accepted_iter] = coord_x[criterion]
+                n_accepted += accepted_iter
+
+            coord_rest = self._sample_uniform_direction(dim=dim_minus_one, size=int(n_samples))
+            coord_rest = np.einsum("...,...i->...i", np.sqrt(1 - x**2), coord_rest)
+
         samples = np.concatenate([x[..., None], coord_rest], axis=1)
-
-        if isinstance(num_samples, (list, tuple)) and len(num_samples) > 1:
-            samples = samples.reshape(tuple(num_samples) + (dim,))
 
         if self.rotation_needed:
             samples = self._rotate_samples(samples)
+
+        if isinstance(num_samples, (list, tuple)) and len(num_samples) > 1:
+            samples = samples.reshape(tuple(num_samples) + (dim,))
         return samples

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import math
+import time
 import timeit
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -23,10 +24,19 @@ except ImportError:
     TORCH_DTYPES = []
 
 DEFAULT_SEEDS = [0, 1, 2, 3, 4]
-DEFAULT_DIMS = [2**power for power in range(1, 10)]
+DEFAULT_DIMS = [2, 3] + [2**power for power in range(2, 10)]
 NUM_SAMPLES = 5_000
 TARGET_TIME_S = 5.0
 KAPPA = 50
+
+# Per-call size calibration (see TODO_benchmark_sizing.md): a fixed NUM_SAMPLES
+# under-reports throughput at low/mid dim because fixed per-call overhead
+# (rotation setup, allocation, dispatch) dominates. Instead we calibrate the
+# number of samples per sample() call, per (backend, dtype, dim), so one call
+# takes about TARGET_CALL_TIME_S, capped by a memory budget.
+TARGET_CALL_TIME_S = 2.0
+MEM_BUDGET_BYTES = 1.2e9
+MIN_SAMPLES = 5_000
 
 AGGREGATE_SEEDS = True
 DISPLAY_MEAN_STD = True
@@ -74,6 +84,57 @@ def _time_sample(sampler: vMF, num_samples: int, target_s: float) -> tuple[float
     return per_call_time, number
 
 
+def _itemsize(dtype: Any) -> int:
+    if torch is not None and isinstance(dtype, torch.dtype):
+        return dtype.itemsize
+    return np.dtype(dtype).itemsize
+
+
+def _calibrate_num_samples(
+    sampler: vMF,
+    dim: int,
+    itemsize: int,
+    target_call_s: float,
+    mem_budget_bytes: float,
+) -> int:
+    """Pick a per-call sample count so one sample() call takes ~target_call_s,
+    capped so its output stays within mem_budget_bytes."""
+    cap = max(MIN_SAMPLES, int(mem_budget_bytes // (dim * itemsize)))
+    n_probe = min(50_000, cap)
+
+    def _run_once(n: int) -> None:
+        if hasattr(sampler, "rotmatrix") and sampler.rotmatrix is not None:
+            sampler.rotmatrix = None
+            sampler.rotsign = None
+        result = sampler.sample(n)
+        if torch is not None and isinstance(result, torch.Tensor) and result.is_cuda:
+            torch.cuda.synchronize(result.device)
+
+    if torch is not None and torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+    # Warm up.
+    _run_once(min(5_000, n_probe))
+
+    # Probe a single call at n_probe to estimate the per-sample rate.
+    start = time.perf_counter()
+    _run_once(n_probe)
+    t = time.perf_counter() - start
+
+    rate = t / n_probe
+    n = max(MIN_SAMPLES, min(int(target_call_s / rate), cap))
+
+    # Refinement: the probe-size call's fixed overhead inflates the per-sample
+    # rate estimate, so the first n undershoots. Re-time at the candidate n.
+    if n > 4 * n_probe:
+        start = time.perf_counter()
+        _run_once(n)
+        t2 = time.perf_counter() - start
+        n = max(MIN_SAMPLES, min(int(target_call_s * n / t2), cap))
+
+    return n
+
+
 def _run_backend(
     backend: str,
     dtypes: list[Any],
@@ -83,12 +144,16 @@ def _run_backend(
     seeds: Iterable[int],
     kappa: float,
     on_row: Callable[[dict[str, Any]], None],
+    fixed_num_samples: int | None,
+    target_call_time_s: float,
+    mem_budget_bytes: float,
 ) -> None:
     for dtype in tqdm.tqdm(dtypes, desc=f"Running benchmark for {backend}"):
         if torch is not None and backend == "torch_cpu" and dtype in {torch.float16, torch.bfloat16}:
             continue
         for dim in dims:
             mu = make_mu(dim, dtype)
+            num_samples = fixed_num_samples
             for seed in seeds:
                 kwargs = extra_kwargs(dtype)
                 sampler = vMF(
@@ -98,7 +163,12 @@ def _run_backend(
                     seed=seed,
                     **kwargs,
                 )
-                time_s, number = _time_sample(sampler, NUM_SAMPLES, TARGET_TIME_S)
+                if num_samples is None:
+                    itemsize = _itemsize(dtype)
+                    num_samples = _calibrate_num_samples(
+                        sampler, dim, itemsize, target_call_time_s, mem_budget_bytes
+                    )
+                time_s, number = _time_sample(sampler, num_samples, TARGET_TIME_S)
                 device = "cpu"
                 if "device" in kwargs and kwargs["device"] is not None:
                     device = getattr(kwargs["device"], "type", str(kwargs["device"]))
@@ -114,7 +184,7 @@ def _run_backend(
                         "uses_householder": "hh" in backend,
                         "inplace": "inplace" in backend,
                         "device": device,
-                        "num_samples": NUM_SAMPLES,
+                        "num_samples": num_samples,
                     }
                 )
 
@@ -182,6 +252,24 @@ def main() -> None:
         help="Comma-separated backend groups to run: numpy, scipy, torch.",
     )
     parser.add_argument("--summary", action="store_true", help="Print summary table at end.")
+    parser.add_argument(
+        "--target-call-time",
+        type=float,
+        default=TARGET_CALL_TIME_S,
+        help="Target wall time (s) for a single sample() call, used to calibrate num_samples.",
+    )
+    parser.add_argument(
+        "--mem-budget-gb",
+        type=float,
+        default=MEM_BUDGET_BYTES / 1e9,
+        help="Memory budget (GB) for a single sample() call's output array, caps calibrated num_samples.",
+    )
+    parser.add_argument(
+        "--num-samples",
+        type=int,
+        default=None,
+        help="Skip calibration and use this fixed num_samples for every row (old behavior).",
+    )
     args = parser.parse_args()
 
     if args.dim is not None:
@@ -279,7 +367,19 @@ def main() -> None:
             continue
         if backend_filter is not None and _backend_group(backend) not in backend_filter:
             continue
-        _run_backend(backend, dtypes, make_mu, extra_kwargs, dims, seeds, kappa, on_row)
+        _run_backend(
+            backend,
+            dtypes,
+            make_mu,
+            extra_kwargs,
+            dims,
+            seeds,
+            kappa,
+            on_row,
+            args.num_samples,
+            args.target_call_time,
+            args.mem_budget_gb * 1e9,
+        )
 
     if rows is None:
         return

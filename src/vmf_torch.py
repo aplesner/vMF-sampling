@@ -90,51 +90,88 @@ class TorchvMF(vMFSampler):
         samples = samples / samples.norm(dim=-1, keepdim=True)
         return samples
 
+    def _sample_dim2(self, num_samples: int | tuple[int, ...], n_samples: int) -> torch.Tensor:
+        """Closed-form: vMF on the circle reduces to the von Mises distribution."""
+        dist_dtype = torch.float32 if self.dtype in (torch.float16, torch.bfloat16) else self.dtype
+        mu_calc = self.mu.to(dtype=dist_dtype)
+        mean_angle = torch.atan2(mu_calc[1], mu_calc[0])
+        concentration = torch.tensor(self.kappa, device=self.device, dtype=dist_dtype)
+        dist = torch.distributions.VonMises(mean_angle, concentration)
+        angles = dist.sample((n_samples,)).to(dtype=self.dtype)
+        samples = torch.stack([torch.cos(angles), torch.sin(angles)], dim=-1)
+        if isinstance(num_samples, (list, tuple)) and len(num_samples) > 1:
+            samples = samples.reshape(tuple(num_samples) + (2,))
+        return samples
+
+    def _sample_dim3(self, n_samples: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """Closed-form inverse-CDF for the polar coordinate about the north pole."""
+        # log/exp are numerically fragile in half precision (tiny underflows to
+        # 0, giving log(0) = -inf), so compute in float32 minimum, like the
+        # QR-based rotation matrix above does for float16/bfloat16.
+        calc_dtype = torch.float32 if self.dtype in (torch.float16, torch.bfloat16) else self.dtype
+        tiny = 1e-12
+        u = torch.rand(n_samples, device=self.device, dtype=calc_dtype)
+        u = torch.clamp(u, min=tiny)
+        x = 1.0 + torch.log(u + (1.0 - u) * math.exp(-2.0 * self.kappa)) / self.kappa
+        t = torch.sqrt(torch.clamp(1.0 - x**2, min=0.0))
+        x = x.to(dtype=self.dtype)
+        t = t.to(dtype=self.dtype)
+        circ = self._sample_uniform_direction(dim=2, size=n_samples)
+        coord_rest = t.unsqueeze(-1) * circ
+        return x, coord_rest
+
     def _sample(self, num_samples: int | tuple[int, ...]) -> torch.Tensor:
         dim = self.dim
         dim_minus_one = dim - 1
         n_samples = int(math.prod(num_samples)) if isinstance(num_samples, (list, tuple)) else int(num_samples)
 
-        sqrt = math.sqrt(4 * self.kappa**2 + dim_minus_one**2)
-        envelop_param = (-2 * self.kappa + sqrt) / dim_minus_one
-        if envelop_param == 0:
-            envelop_param = (dim_minus_one / 4 * self.kappa**-1 - dim_minus_one**3 / 64 * self.kappa**-3)
+        if dim == 2:
+            return self._sample_dim2(num_samples, n_samples)
 
-        node = (1.0 - envelop_param) / (1.0 + envelop_param)
-        correction = self.kappa * node + dim_minus_one * (
-            math.log(4) + math.log(envelop_param) - 2 * math.log1p(envelop_param)
-        )
+        if dim == 3:
+            x, coord_rest = self._sample_dim3(n_samples)
+        else:
+            sqrt = math.sqrt(4 * self.kappa**2 + dim_minus_one**2)
+            envelop_param = (-2 * self.kappa + sqrt) / dim_minus_one
+            if envelop_param == 0:
+                envelop_param = (dim_minus_one / 4 * self.kappa**-1 - dim_minus_one**3 / 64 * self.kappa**-3)
 
-        n_accepted = 0
-        x = torch.zeros((n_samples,), device=self.device, dtype=self.dtype)
-        halfdim = 0.5 * dim_minus_one
-        beta_dist = torch.distributions.Beta(halfdim, halfdim)
-
-        while n_accepted < n_samples:
-            remaining = n_samples - n_accepted
-            sym_beta = beta_dist.sample((remaining,)).to(device=self.device, dtype=self.dtype)
-            coord_x = (1 - (1 + envelop_param) * sym_beta) / (1 - (1 - envelop_param) * sym_beta)
-            accept_tol = torch.rand(remaining, device=self.device, dtype=self.dtype)
-            criterion = (
-                self.kappa * coord_x
-                + dim_minus_one
-                * (
-                    torch.log((1 + envelop_param - coord_x + coord_x * envelop_param) / (1 + envelop_param))
-                )
-                - correction
-                > torch.log(accept_tol)
+            node = (1.0 - envelop_param) / (1.0 + envelop_param)
+            correction = self.kappa * node + dim_minus_one * (
+                math.log(4) + math.log(envelop_param) - 2 * math.log1p(envelop_param)
             )
-            accepted_iter = int(criterion.sum().item())
-            x[n_accepted : n_accepted + accepted_iter] = coord_x[criterion]
-            n_accepted += accepted_iter
 
-        coord_rest = self._sample_uniform_direction(dim=dim_minus_one, size=n_samples)
-        coord_rest = torch.einsum("...,...i->...i", torch.sqrt(1 - x**2), coord_rest)
+            n_accepted = 0
+            x = torch.zeros((n_samples,), device=self.device, dtype=self.dtype)
+            halfdim = 0.5 * dim_minus_one
+            beta_dist = torch.distributions.Beta(halfdim, halfdim)
+
+            while n_accepted < n_samples:
+                remaining = n_samples - n_accepted
+                sym_beta = beta_dist.sample((remaining,)).to(device=self.device, dtype=self.dtype)
+                coord_x = (1 - (1 + envelop_param) * sym_beta) / (1 - (1 - envelop_param) * sym_beta)
+                accept_tol = torch.rand(remaining, device=self.device, dtype=self.dtype)
+                criterion = (
+                    self.kappa * coord_x
+                    + dim_minus_one
+                    * (
+                        torch.log((1 + envelop_param - coord_x + coord_x * envelop_param) / (1 + envelop_param))
+                    )
+                    - correction
+                    > torch.log(accept_tol)
+                )
+                accepted_iter = int(criterion.sum().item())
+                x[n_accepted : n_accepted + accepted_iter] = coord_x[criterion]
+                n_accepted += accepted_iter
+
+            coord_rest = self._sample_uniform_direction(dim=dim_minus_one, size=n_samples)
+            coord_rest = torch.einsum("...,...i->...i", torch.sqrt(1 - x**2), coord_rest)
+
         samples = torch.cat([x[..., None], coord_rest], dim=1)
-
-        if isinstance(num_samples, (list, tuple)) and len(num_samples) > 1:
-            samples = samples.reshape(tuple(num_samples) + (dim,))
 
         if self.rotation_needed:
             samples = self._rotate_samples(samples)
+
+        if isinstance(num_samples, (list, tuple)) and len(num_samples) > 1:
+            samples = samples.reshape(tuple(num_samples) + (dim,))
         return samples

@@ -7,7 +7,7 @@
 #SBATCH --nodes=1
 #SBATCH --nodelist=tikgpu06,tikgpu07,tikgpu09
 #SBATCH --time=2:00:00
-#SBATCH --array=0-38%12
+#SBATCH --array=0-41%12
 
 set -euo pipefail
 
@@ -53,7 +53,7 @@ source "${VENV_DIR}/bin/activate"
 
 
 
-DIMS=(2 4 8 16 32 64 128 256 512 1024 2048 4096 8192)
+DIMS=(2 3 4 8 16 32 64 128 256 512 1024 2048 4096 8192)
 BACKENDS=(numpy scipy torch)
 
 TASK_ID="${SLURM_ARRAY_TASK_ID}"
