@@ -1,6 +1,6 @@
 # Benchmark re-measurement (post sizing fix)
 
-**Status: code changes done (2026-07-13) — re-measurement pending.**
+**Status: optimized PyTorch CPU re-measurements completed on both CPUs (2026-07-23).**
 
 All items from the original TODO are implemented:
 
@@ -19,38 +19,35 @@ All items from the original TODO are implemented:
   so its dim-2/3 numbers understated scipy; it now mirrors them faithfully
   (dim 2: 13.6 M/s, matching real scipy; dim 3: 17.4 vs 20.7 M/s). The repo
   backends measure at parity: numpy 13.4/18–21 M/s, torch f32 ~33 M/s at dim 3.
+- **PyTorch CPU path** — sample batches stay row-major for dense multiplication,
+  direction normalization and radial scaling are in-place, and the Householder
+  rank-one update uses fused `addmm` rather than allocating an outer-product
+  tensor. On the newer CPU this improves PyTorch QR by 5.18× at dimension 2048
+  and PyTorch Householder by roughly 4–6% at larger dimensions.
 - **Single Householder reflection** — the hh backends drop the second flip;
   `u = (e1 − mu)/‖e1 − mu‖` maps e1 → mu directly (det = −1 is irrelevant for
   vMF; the antipodal special case is gone). Also fixed a pre-existing crash:
   tuple-shaped `num_samples` reshaped before rotation.
-- **Report** — now a standalone `docs/benchmark_report.html` (self-contained,
-  blog-ready) with the method text updated and an honest "Updates since these
-  measurements" section. Its numbers still come from the old methodology and
-  must be refreshed after the re-run.
+- **Report** — the published HTML has moved to
+  `../aplesner.github.io/blog/2026-07-23-faster-vmf-sampling/`; source SVG/PNG
+  figures under `docs/assets/` use the newer AMD EPYC run and the older Intel
+  Xeon run as a hardware-generalization appendix. Raw data lives in
+  `measurements/runs/{20260723T094321Z-tikgpu10,20260723T160232Z-arton10}`.
+  `docs/benchmark_report.html` is retained as the older standalone report.
 
-## How to re-run (all backends, including scipy — hardware may have changed)
+## How to re-run
 
-1. On the cluster, start from a **clean output dir** — `benchmark.py` appends
-   to existing CSVs, which would mix methodologies:
+Use the project cluster helpers; they isolate every run by ID, so CSVs from
+separate methodologies cannot be mixed accidentally:
 
-   ```bash
-   rm -f /itet-stor/$USER/net_scratch/jobs/vmf-sampling/benchmarks/benchmark_*.csv
-   sbatch scripts/benchmark.slurm   # 42 array tasks = 14 dims (incl. dim 3) × {numpy, scipy, torch}
-   ```
+```bash
+scripts/cluster_submit.sh
+scripts/cluster_status.sh JOB_ID
+scripts/cluster_fetch.sh RUN_ID
+uv run python scripts/make_blog.py --run measurements/runs/RUN_ID
+```
 
-2. Copy the per-dim CSVs over `measurements/benchmark_*_dim*.csv`, then merge:
-
-   ```bash
-   uv run python scripts/merge_benchmarks.py
-   ```
-
-3. Re-run `benchmark_analysis.ipynb` and refresh the numbers/figures in
-   `docs/benchmark_report.html`.
-
-Notes:
-
-- Each row now takes roughly 8–12 s (calibration probe + 5 s window), so a
-  full sweep is slower than the old fixed-5000 runs but still well inside the
-  2 h slurm limit per (backend, dim) task.
-- Expect low/mid-dim throughputs to rise ~1.6–3× (dim ≤ 64) purely from the
-  sizing fix; high-dim numbers and the hh-vs-QR ratios should be stable.
+The current Slurm array has 39 tasks: 13 dimensions (including dim 3) times
+`{numpy, scipy, torch}`. It measures float64 with three seeds and a 2 s timing
+window. Both `arton10` and CPU-only `tikgpu10` targets are supported; see
+`scripts/CLUSTER.md` for paths and overrides.

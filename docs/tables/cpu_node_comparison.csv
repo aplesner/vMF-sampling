@@ -1,0 +1,5 @@
+Dimension,AMD EPYC 7742 reflection,AMD EPYC 7742 vs SciPy,Intel Xeon E5-2690 v2 reflection,Intel Xeon E5-2690 v2 vs SciPy
+128,371 k/s,3.31×,230 k/s,2.93×
+512,94.9 k/s,11.85×,60.3 k/s,8.50×
+2048,24.0 k/s,59.86×,15.2 k/s,41.78×
+4096,12.3 k/s,126.97×,7.86 k/s,86.45×

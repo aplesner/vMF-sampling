@@ -147,6 +147,7 @@ def _run_backend(
     fixed_num_samples: int | None,
     target_call_time_s: float,
     mem_budget_bytes: float,
+    target_time_s: float,
 ) -> None:
     for dtype in tqdm.tqdm(dtypes, desc=f"Running benchmark for {backend}"):
         if torch is not None and backend == "torch_cpu" and dtype in {torch.float16, torch.bfloat16}:
@@ -168,7 +169,7 @@ def _run_backend(
                     num_samples = _calibrate_num_samples(
                         sampler, dim, itemsize, target_call_time_s, mem_budget_bytes
                     )
-                time_s, number = _time_sample(sampler, num_samples, TARGET_TIME_S)
+                time_s, number = _time_sample(sampler, num_samples, target_time_s)
                 device = "cpu"
                 if "device" in kwargs and kwargs["device"] is not None:
                     device = getattr(kwargs["device"], "type", str(kwargs["device"]))
@@ -202,6 +203,14 @@ def _parse_int_list(value: str) -> list[int]:
 
 def _parse_float_list(value: str) -> list[float]:
     return [float(item) for item in value.split(",") if item]
+
+
+def _dtype_name(dtype: Any) -> str:
+    name = str(dtype)
+    for candidate in ("float16", "bfloat16", "float32", "float64"):
+        if candidate in name:
+            return candidate
+    return name
 
 
 def _parse_dims_range(value: str) -> list[int]:
@@ -244,6 +253,12 @@ def main() -> None:
     parser.add_argument("--dims", type=_parse_int_list, help="Comma-separated dimensions.")
     parser.add_argument("--dims-range", type=_parse_dims_range, help="Range start:end(:step).")
     parser.add_argument("--kappa", type=float, default=KAPPA, help="Kappa value.")
+    parser.add_argument(
+        "--seeds",
+        type=_parse_int_list,
+        default=DEFAULT_SEEDS,
+        help="Comma-separated random seeds.",
+    )
     parser.add_argument("--output", type=Path, help="CSV output path for incremental results.")
     parser.add_argument(
         "--backends",
@@ -251,7 +266,19 @@ def main() -> None:
         default=None,
         help="Comma-separated backend groups to run: numpy, scipy, torch.",
     )
+    parser.add_argument(
+        "--dtypes",
+        type=lambda v: [item.strip() for item in v.split(",") if item.strip()],
+        default=None,
+        help="Optional comma-separated dtype filter, e.g. float32,float64.",
+    )
     parser.add_argument("--summary", action="store_true", help="Print summary table at end.")
+    parser.add_argument(
+        "--target-time",
+        type=float,
+        default=TARGET_TIME_S,
+        help="Target total timing window (s) for each benchmark row.",
+    )
     parser.add_argument(
         "--target-call-time",
         type=float,
@@ -281,7 +308,7 @@ def main() -> None:
     else:
         dims = DEFAULT_DIMS
 
-    seeds = DEFAULT_SEEDS
+    seeds = args.seeds
     kappa = args.kappa
 
     rows: list[dict[str, Any]] | None = [] if (args.summary or args.output is None) else None
@@ -362,14 +389,20 @@ def main() -> None:
     if args.backends is not None:
         backend_filter = {item.lower() for item in args.backends}
 
+    dtype_filter = set(args.dtypes) if args.dtypes is not None else None
     for backend, dtypes, make_mu, extra_kwargs in backends:
         if torch is None and backend.startswith("torch"):
             continue
         if backend_filter is not None and _backend_group(backend) not in backend_filter:
             continue
+        selected_dtypes = dtypes
+        if dtype_filter is not None:
+            selected_dtypes = [dtype for dtype in dtypes if _dtype_name(dtype) in dtype_filter]
+            if not selected_dtypes:
+                continue
         _run_backend(
             backend,
-            dtypes,
+            selected_dtypes,
             make_mu,
             extra_kwargs,
             dims,
@@ -379,6 +412,7 @@ def main() -> None:
             args.num_samples,
             args.target_call_time,
             args.mem_budget_gb * 1e9,
+            args.target_time,
         )
 
     if rows is None:

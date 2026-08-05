@@ -1,0 +1,57 @@
+2026-07-23T18:33:11+02:00
+run_id=20260723T160232Z-arton10
+job_id=2126423_14
+host=arton10
+allocated_cpus=12
+allocated_gpus=none
+repo=/itet-stor/aplesner/net_scratch/vmf-sampling/repo
+python=Python 3.12.12
+numpy=2.5.1
+scipy=1.18.0
+torch=2.13.0+cpu
+torch_cpu_capability=DEFAULT
+torch_num_threads=12
+torch_num_interop_threads=20
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           46 bits physical, 48 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  40
+On-line CPU(s) list:                     0-39
+Vendor ID:                               GenuineIntel
+Model name:                              Intel(R) Xeon(R) CPU E5-2690 v2 @ 3.00GHz
+CPU family:                              6
+Model:                                   62
+Thread(s) per core:                      2
+Core(s) per socket:                      10
+Socket(s):                               2
+Stepping:                                4
+CPU(s) scaling MHz:                      61%
+CPU max MHz:                             3600.0000
+CPU min MHz:                             1200.0000
+BogoMIPS:                                5985.38
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 monitor ds_cpl smx est tm2 ssse3 cx16 xtpr pdcm pcid dca sse4_1 sse4_2 x2apic popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm cpuid_fault epb pti intel_ppin fsgsbase smep erms xsaveopt dtherm ida arat pln pts
+L1d cache:                               640 KiB (20 instances)
+L1i cache:                               640 KiB (20 instances)
+L2 cache:                                5 MiB (20 instances)
+L3 cache:                                50 MiB (2 instances)
+NUMA node(s):                            2
+NUMA node0 CPU(s):                       0-9,20-29
+NUMA node1 CPU(s):                       10-19,30-39
+Vulnerability Gather data sampling:      Not affected
+Vulnerability Indirect target selection: Not affected
+Vulnerability Itlb multihit:             KVM: Mitigation: VMX unsupported
+Vulnerability L1tf:                      Mitigation; PTE Inversion
+Vulnerability Mds:                       Vulnerable: Clear CPU buffers attempted, no microcode; SMT vulnerable
+Vulnerability Meltdown:                  Mitigation; PTI
+Vulnerability Mmio stale data:           Unknown: No mitigations
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Not affected
+Vulnerability Spec rstack overflow:      Not affected
+Vulnerability Spec store bypass:         Vulnerable
+Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; Retpolines; STIBP disabled; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected
+Vulnerability Srbds:                     Not affected
+Vulnerability Tsa:                       Not affected
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Vulnerable

@@ -24,7 +24,9 @@ class NumpyvMF(vMFSampler):
             self.dtype = np.float64
 
         super().__init__(dim, mu=mu, kappa=kappa, seed=seed, rotation_needed=rotation_needed)
-        self.random_state = np.random.default_rng(seed)
+        # PCG64DXSM is the modern, statistically stronger PCG64 variant.  Keep
+        # the generator local to this sampler so instances do not share state.
+        self.random_state = np.random.Generator(np.random.PCG64DXSM(seed))
         self.rotmatrix: np.ndarray | None = None
         self.rotsign: int | None = None
 

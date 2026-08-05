@@ -1,0 +1,10 @@
+backend,dtype,dim,kappa,seed,time_s,number,uses_householder,inplace,device,num_samples
+torch_cpu,torch.float64,2048,50,0,4.143560220953077,1,False,False,cpu,7954
+torch_cpu,torch.float64,2048,50,1,4.098264425061643,1,False,False,cpu,7954
+torch_cpu,torch.float64,2048,50,2,4.079354844987392,1,False,False,cpu,7954
+torch_hh_inplace_cpu,torch.float64,2048,50,0,1.0119954040274024,2,True,True,cpu,18521
+torch_hh_inplace_cpu,torch.float64,2048,50,1,1.0109909435268492,2,True,True,cpu,18521
+torch_hh_inplace_cpu,torch.float64,2048,50,2,1.0109055500943214,2,True,True,cpu,18521
+torch_hh_cpu,torch.float64,2048,50,0,1.0274460669606924,2,True,False,cpu,17924
+torch_hh_cpu,torch.float64,2048,50,1,1.0280337190488353,2,True,False,cpu,17924
+torch_hh_cpu,torch.float64,2048,50,2,1.028133936575614,2,True,False,cpu,17924

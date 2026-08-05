@@ -1,0 +1,4 @@
+backend,dtype,dim,kappa,seed,time_s,number,uses_householder,inplace,device,num_samples
+scipy,<class 'numpy.float64'>,16,50,0,0.9991058776310334,3,False,False,cpu,1338766
+scipy,<class 'numpy.float64'>,16,50,1,0.9990974973576764,3,False,False,cpu,1338766
+scipy,<class 'numpy.float64'>,16,50,2,0.9988563883428773,3,False,False,cpu,1338766

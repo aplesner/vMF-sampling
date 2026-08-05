@@ -25,7 +25,9 @@ class ScipyvMF(vMFSampler):
             self.dtype = np.float64
 
         super().__init__(dim, mu=mu, kappa=kappa, seed=seed, rotation_needed=rotation_needed)
-        self.random_state = np.random.default_rng(seed)
+        # Preserve the legacy RandomState stream used by SciPy's original
+        # implementation; this backend is the historical comparison baseline.
+        self.random_state = np.random.RandomState(seed)
         self.rotmatrix: np.ndarray | None = None
         self.rotsign: int | None = None
 

@@ -1,0 +1,3 @@
+Implementation,Baseline,Geometric mean,Maximum measured
+"NumPy reflection, in-place",SciPy QR,6.28×,126.97×
+"PyTorch reflection, in-place",SciPy QR,5.01×,99.01×

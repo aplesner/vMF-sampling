@@ -5,6 +5,7 @@ from typing import Any
 
 import torch
 
+from .torch_random import make_generator, sample_symmetric_beta, sample_von_mises
 from .vmf_sampler import vMFSampler
 
 DTYPES = [torch.float16, torch.bfloat16, torch.float32, torch.float64]
@@ -27,12 +28,14 @@ class TorchvMF(vMFSampler):
         else:
             self.dtype = torch.float32
 
-        self.device = torch.device(device) if device is not None else torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        if device is not None:
+            self.device = torch.device(device)
+        elif mu is not None:
+            self.device = mu.device
+        else:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.dtype = dtype if dtype is not None else torch.float32
-        if seed is not None:
-            torch.manual_seed(seed)
+        self.generator = make_generator(self.device, seed)
 
         super().__init__(dim, mu=mu, kappa=kappa, seed=seed, rotation_needed=rotation_needed)
         self.rotmatrix: torch.Tensor | None = None
@@ -55,7 +58,9 @@ class TorchvMF(vMFSampler):
 
     def _on_mu_updated(self) -> None:
         if isinstance(self.mu, torch.Tensor):
-            self.device = self.mu.device
+            if self.mu.device != self.device:
+                self.device = self.mu.device
+                self.generator = make_generator(self.device, self.seed)
             self.dtype = self.mu.dtype
         self.rotmatrix = None
         self.rotsign = None
@@ -83,11 +88,17 @@ class TorchvMF(vMFSampler):
     def _rotate_samples(self, samples: torch.Tensor) -> torch.Tensor:
         if self.rotmatrix is None:
             self._compute_rotation_matrix()
-        return torch.matmul(self.rotmatrix, samples.T).T * self.rotsign
+        # Keep samples row-major rather than materializing transposed views on
+        # both sides of the matrix multiplication.
+        return torch.mm(samples, self.rotmatrix.T).mul_(self.rotsign)
 
     def _sample_uniform_direction(self, dim: int, size: int) -> torch.Tensor:
-        samples = torch.randn((size, dim), device=self.device, dtype=self.dtype)
-        samples = samples / samples.norm(dim=-1, keepdim=True)
+        samples = torch.randn(
+            (size, dim), device=self.device, dtype=self.dtype, generator=self.generator
+        )
+        # Normalization owns this freshly allocated tensor, so avoid allocating
+        # another full sample matrix for the division.
+        samples.div_(samples.norm(dim=-1, keepdim=True))
         return samples
 
     def _sample_dim2(self, num_samples: int | tuple[int, ...], n_samples: int) -> torch.Tensor:
@@ -95,9 +106,13 @@ class TorchvMF(vMFSampler):
         dist_dtype = torch.float32 if self.dtype in (torch.float16, torch.bfloat16) else self.dtype
         mu_calc = self.mu.to(dtype=dist_dtype)
         mean_angle = torch.atan2(mu_calc[1], mu_calc[0])
-        concentration = torch.tensor(self.kappa, device=self.device, dtype=dist_dtype)
-        dist = torch.distributions.VonMises(mean_angle, concentration)
-        angles = dist.sample((n_samples,)).to(dtype=self.dtype)
+        angles = sample_von_mises(
+            mean_angle,
+            self.kappa,
+            n_samples,
+            generator=self.generator,
+            output_dtype=self.dtype,
+        )
         samples = torch.stack([torch.cos(angles), torch.sin(angles)], dim=-1)
         if isinstance(num_samples, (list, tuple)) and len(num_samples) > 1:
             samples = samples.reshape(tuple(num_samples) + (2,))
@@ -110,7 +125,12 @@ class TorchvMF(vMFSampler):
         # QR-based rotation matrix above does for float16/bfloat16.
         calc_dtype = torch.float32 if self.dtype in (torch.float16, torch.bfloat16) else self.dtype
         tiny = 1e-12
-        u = torch.rand(n_samples, device=self.device, dtype=calc_dtype)
+        u = torch.rand(
+            n_samples,
+            device=self.device,
+            dtype=calc_dtype,
+            generator=self.generator,
+        )
         u = torch.clamp(u, min=tiny)
         x = 1.0 + torch.log(u + (1.0 - u) * math.exp(-2.0 * self.kappa)) / self.kappa
         t = torch.sqrt(torch.clamp(1.0 - x**2, min=0.0))
@@ -144,13 +164,22 @@ class TorchvMF(vMFSampler):
             n_accepted = 0
             x = torch.zeros((n_samples,), device=self.device, dtype=self.dtype)
             halfdim = 0.5 * dim_minus_one
-            beta_dist = torch.distributions.Beta(halfdim, halfdim)
-
             while n_accepted < n_samples:
                 remaining = n_samples - n_accepted
-                sym_beta = beta_dist.sample((remaining,)).to(device=self.device, dtype=self.dtype)
+                sym_beta = sample_symmetric_beta(
+                    halfdim,
+                    remaining,
+                    device=self.device,
+                    dtype=self.dtype,
+                    generator=self.generator,
+                )
                 coord_x = (1 - (1 + envelop_param) * sym_beta) / (1 - (1 - envelop_param) * sym_beta)
-                accept_tol = torch.rand(remaining, device=self.device, dtype=self.dtype)
+                accept_tol = torch.rand(
+                    remaining,
+                    device=self.device,
+                    dtype=self.dtype,
+                    generator=self.generator,
+                )
                 criterion = (
                     self.kappa * coord_x
                     + dim_minus_one
@@ -165,7 +194,9 @@ class TorchvMF(vMFSampler):
                 n_accepted += accepted_iter
 
             coord_rest = self._sample_uniform_direction(dim=dim_minus_one, size=n_samples)
-            coord_rest = torch.einsum("...,...i->...i", torch.sqrt(1 - x**2), coord_rest)
+            # This is row scaling, not a general tensor contraction.  Broadcasting
+            # with an in-place multiply is both clearer and allocation-free.
+            coord_rest.mul_(torch.sqrt(1 - x.square()).unsqueeze(-1))
 
         samples = torch.cat([x[..., None], coord_rest], dim=1)
 

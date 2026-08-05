@@ -4,6 +4,7 @@ import math
 
 import torch
 
+from .torch_random import make_generator, sample_symmetric_beta, sample_von_mises
 from .vmf_sampler import vMFSampler
 
 DTYPES = [torch.float16, torch.bfloat16, torch.float32, torch.float64]
@@ -28,12 +29,14 @@ class TorchvMFHH(vMFSampler):
         else:
             self.dtype = torch.float32
 
-        self.device = torch.device(device) if device is not None else torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        if device is not None:
+            self.device = torch.device(device)
+        elif mu is not None:
+            self.device = mu.device
+        else:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.dtype = dtype if dtype is not None else torch.float32
-        if seed is not None:
-            torch.manual_seed(seed)
+        self.generator = make_generator(self.device, seed)
 
         super().__init__(dim, mu=mu, kappa=kappa, seed=seed, rotation_needed=rotation_needed)
         self.inplace = inplace
@@ -56,7 +59,9 @@ class TorchvMFHH(vMFSampler):
 
     def _on_mu_updated(self) -> None:
         if isinstance(self.mu, torch.Tensor):
-            self.device = self.mu.device
+            if self.mu.device != self.device:
+                self.device = self.mu.device
+                self.generator = make_generator(self.device, self.seed)
             self.dtype = self.mu.dtype
 
     def _rotate_householder(self, S: torch.Tensor) -> torch.Tensor:
@@ -73,8 +78,10 @@ class TorchvMFHH(vMFSampler):
         v = x - self.mu
         u = v / torch.linalg.norm(v)
 
-        # Vectorized application: H(s) = s - 2(u·s)u
-        return S - 2 * torch.outer(S @ u, u)
+        # Fused rank-one update: H(S) = S - 2(Su)u^T.  addmm avoids
+        # materializing both an outer-product tensor and a subtraction result.
+        projection = torch.mv(S, u).unsqueeze(1)
+        return torch.addmm(S, projection, u.unsqueeze(0), alpha=-2)
 
     def _rotate_householder_inplace(self, S: torch.Tensor) -> torch.Tensor:
         """
@@ -91,10 +98,11 @@ class TorchvMFHH(vMFSampler):
         v = x - self.mu
         u = v / torch.linalg.norm(v)
 
-        # Vectorized application: H(s) = s - 2(u·s)u
-        S_dot = torch.mv(S, u)
-        S_dot.mul_(2)
-        S.sub_(torch.outer(S_dot, u))
+        # Fused in-place rank-one update.  The previous outer()+sub_ sequence
+        # still allocated one output-sized temporary, despite being labelled
+        # in-place.
+        projection = torch.mv(S, u).unsqueeze(1)
+        S.addmm_(projection, u.unsqueeze(0), alpha=-2)
         return S
 
     def _rotate_samples(self, samples: torch.Tensor) -> torch.Tensor:
@@ -103,8 +111,10 @@ class TorchvMFHH(vMFSampler):
         return self._rotate_householder(samples)
 
     def _sample_uniform_direction(self, dim: int, size: int) -> torch.Tensor:
-        samples = torch.randn((size, dim), device=self.device, dtype=self.dtype)
-        samples = samples / samples.norm(dim=-1, keepdim=True)
+        samples = torch.randn(
+            (size, dim), device=self.device, dtype=self.dtype, generator=self.generator
+        )
+        samples.div_(samples.norm(dim=-1, keepdim=True))
         return samples
 
     def _sample_dim2(self, num_samples: int | tuple[int, ...], n_samples: int) -> torch.Tensor:
@@ -112,9 +122,13 @@ class TorchvMFHH(vMFSampler):
         dist_dtype = torch.float32 if self.dtype in (torch.float16, torch.bfloat16) else self.dtype
         mu_calc = self.mu.to(dtype=dist_dtype)
         mean_angle = torch.atan2(mu_calc[1], mu_calc[0])
-        concentration = torch.tensor(self.kappa, device=self.device, dtype=dist_dtype)
-        dist = torch.distributions.VonMises(mean_angle, concentration)
-        angles = dist.sample((n_samples,)).to(dtype=self.dtype)
+        angles = sample_von_mises(
+            mean_angle,
+            self.kappa,
+            n_samples,
+            generator=self.generator,
+            output_dtype=self.dtype,
+        )
         samples = torch.stack([torch.cos(angles), torch.sin(angles)], dim=-1)
         if isinstance(num_samples, (list, tuple)) and len(num_samples) > 1:
             samples = samples.reshape(tuple(num_samples) + (2,))
@@ -127,7 +141,12 @@ class TorchvMFHH(vMFSampler):
         # QR-based rotation matrix does elsewhere for float16/bfloat16.
         calc_dtype = torch.float32 if self.dtype in (torch.float16, torch.bfloat16) else self.dtype
         tiny = 1e-12
-        u = torch.rand(n_samples, device=self.device, dtype=calc_dtype)
+        u = torch.rand(
+            n_samples,
+            device=self.device,
+            dtype=calc_dtype,
+            generator=self.generator,
+        )
         u = torch.clamp(u, min=tiny)
         x = 1.0 + torch.log(u + (1.0 - u) * math.exp(-2.0 * self.kappa)) / self.kappa
         t = torch.sqrt(torch.clamp(1.0 - x**2, min=0.0))
@@ -161,13 +180,22 @@ class TorchvMFHH(vMFSampler):
             n_accepted = 0
             x = torch.zeros((n_samples,), device=self.device, dtype=self.dtype)
             halfdim = 0.5 * dim_minus_one
-            beta_dist = torch.distributions.Beta(halfdim, halfdim)
-
             while n_accepted < n_samples:
                 remaining = n_samples - n_accepted
-                sym_beta = beta_dist.sample((remaining,)).to(device=self.device, dtype=self.dtype)
+                sym_beta = sample_symmetric_beta(
+                    halfdim,
+                    remaining,
+                    device=self.device,
+                    dtype=self.dtype,
+                    generator=self.generator,
+                )
                 coord_x = (1 - (1 + envelop_param) * sym_beta) / (1 - (1 - envelop_param) * sym_beta)
-                accept_tol = torch.rand(remaining, device=self.device, dtype=self.dtype)
+                accept_tol = torch.rand(
+                    remaining,
+                    device=self.device,
+                    dtype=self.dtype,
+                    generator=self.generator,
+                )
                 criterion = (
                     self.kappa * coord_x
                     + dim_minus_one
@@ -182,7 +210,7 @@ class TorchvMFHH(vMFSampler):
                 n_accepted += accepted_iter
 
             coord_rest = self._sample_uniform_direction(dim=dim_minus_one, size=n_samples)
-            coord_rest = torch.einsum("...,...i->...i", torch.sqrt(1 - x**2), coord_rest)
+            coord_rest.mul_(torch.sqrt(1 - x.square()).unsqueeze(-1))
 
         samples = torch.cat([x[..., None], coord_rest], dim=1)
 

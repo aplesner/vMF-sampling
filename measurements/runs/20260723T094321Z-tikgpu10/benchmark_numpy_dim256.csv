@@ -1,0 +1,10 @@
+backend,dtype,dim,kappa,seed,time_s,number,uses_householder,inplace,device,num_samples
+numpy,<class 'numpy.float64'>,256,50,0,1.0007647190553446,3,False,False,cpu,174767
+numpy,<class 'numpy.float64'>,256,50,1,0.9805252559793493,3,False,False,cpu,174767
+numpy,<class 'numpy.float64'>,256,50,2,0.9808465339398632,3,False,False,cpu,174767
+numpy_hh_inplace,<class 'numpy.float64'>,256,50,0,0.9843337969699254,3,True,True,cpu,182577
+numpy_hh_inplace,<class 'numpy.float64'>,256,50,1,0.9853652873231719,3,True,True,cpu,182577
+numpy_hh_inplace,<class 'numpy.float64'>,256,50,2,0.9863549172878265,3,True,True,cpu,182577
+numpy_hh,<class 'numpy.float64'>,256,50,0,0.9897184023478379,3,True,False,cpu,174510
+numpy_hh,<class 'numpy.float64'>,256,50,1,0.9863450343254954,3,True,False,cpu,174510
+numpy_hh,<class 'numpy.float64'>,256,50,2,0.9883208653579155,3,True,False,cpu,174510
