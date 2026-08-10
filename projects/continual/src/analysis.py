@@ -17,9 +17,10 @@ N_BOOT = 10_000
 RNG = np.random.default_rng(7)
 
 
-def load_tier(tier):
+def load_tier(tier, results_dir=None):
     frames = []
-    for f in sorted(glob.glob(os.path.join(RESULTS, f"{tier}_shard*.csv"))):
+    rdir = results_dir or RESULTS
+    for f in sorted(glob.glob(os.path.join(rdir, f"{tier}_shard*.csv"))):
         frames.append(pd.read_csv(f))
     if not frames:
         return pd.DataFrame()

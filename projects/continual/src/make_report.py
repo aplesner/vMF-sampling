@@ -73,12 +73,18 @@ def fmt(x, nd=2):
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--results-dir", default=os.path.join(ROOT, "results"))
+    ap.add_argument("--label", default="")
+    args = ap.parse_args()
+    rdir = args.results_dir
     sections = []
     status = []
     changelog = []
 
     # ---------- Tier 0 ----------
-    t0 = A.load_tier("tier0")
+    t0 = A.load_tier("tier0", rdir)
     tier0_html = ""
     gate = None
     if len(t0):
@@ -146,7 +152,8 @@ def main():
         <h3>Reading of the Tier-0 result</h3>
         <p class="prose">The pre-registered gate <b>fails</b>: at LCA-selected
         configs both arms collapse to old-class accuracy 0 within one phase-2
-        epoch, LCAs are equal, and epoch-grid dominance is 20%. The origin
+        epoch, LCAs are equal, and epoch-grid dominance is
+        {100*gate['dominance_fraction']:.0f}%. The origin
         claim — faster convergence <i>and</i> less forgetting
         <i>simultaneously</i> — does not replicate as stated.</p>
         <p class="prose">What does replicate is a frontier effect: pooling all
@@ -206,28 +213,49 @@ def main():
                     for c in rows_u[1:]]
             match_idx = int(np.argmin(errs))
             match_err = float(np.sqrt(errs[match_idx] / len(nm_curve)))
+        # transient dose-response: old acc at epochs 1-3 per dose
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        fig_dr, ax_dr = plt.subplots(figsize=(5.2, 3.6))
+        trans_rows = []
+        for d in doses:
+            dd = p2[(p2.arm == "mlp") & (p2.lr == cfg_m[0]) & (p2.wd == d)]
+            g = dd.groupby("epoch").old_acc.mean()
+            trans_rows.append([f"{d:g}"] + [f"{100*g.get(e, 0):.2f}" for e in (1, 2, 3)])
+        ax_dr.plot(range(len(doses)), [float(r[2]) for r in trans_rows],
+                   marker="o", color=A.C3, label="epoch 2")
+        ax_dr.plot(range(len(doses)), [float(r[3]) for r in trans_rows],
+                   marker="s", ms=4, color=A.C1, label="epoch 3")
+        ax_dr.set_xticks(range(len(doses)), [f"{d:g}" for d in doses], fontsize=8)
+        ax_dr.set_xlabel("baseline weight decay (dose)")
+        ax_dr.set_ylabel("old-class acc early in phase 2 (%)")
+        ax_dr.grid(alpha=0.3); ax_dr.legend(frameon=False)
+        ax_dr.set_title("WD dose–response is FLAT", fontsize=10)
         figs = A.fig_update_overlay(rows_u, "Per-layer relative update norms — dose match") + \
-               A.fig_dose_response(points, "WD dose–response: old-class forgetting")
+               A._svg(fig_dr)
         matched_wd = rows_u[1 + match_idx][0] if match_idx is not None else "n/a"
         match_err_s = f"{match_err:.3f} dex" if match_err is not None else "n/a"
-        tab = table([[f"{p[0]:g}", fmt(100 * p[2]) + " ± " + fmt(100 * p[3])]
-                     for p in points], ["baseline WD", "old-class drop (pts)"])
+        tab = table(trans_rows, ["baseline WD", "old acc ep1", "ep2", "ep3"])
         tier1a_html = f"""
         <h2>Tier 1a — weight-decay dose–response (ELR control)</h2>
         <p class="prose">Baseline MLP at its selected LR ({cfg_m[0]:g}), five WD doses
-        (the tier-0 grid). The dose whose per-layer ‖ΔW‖/‖W‖ profile overlays the
-        nMLP's is the ELR-matched point — here <b>{matched_wd}</b>
-        (log-space RMS misfit {match_err_s}). If the nMLP's
-        stability advantage survives at matched update norms, it is not an
-        effective-learning-rate artifact.</p>
+        (the tier-0 grid). <b>Negative result:</b> WD barely moves the baseline's
+        per-layer ‖ΔW‖/‖W‖ (overlay curves nearly identical; best misfit
+        {match_err_s} at {matched_wd}) and does not move forgetting at any dose
+        — old-class accuracy is 0 from epoch 1 everywhere. The van Laarhoven
+        ELR mechanism requires scale-invariant weights, which the plain MLP
+        does not have: on the baseline, weight decay is not an effective-step
+        knob at this horizon. The knob that does move the baseline's effective
+        step is LR itself — that is Tier 1c.</p>
         {tab}
         <div class="fig">{figs}</div>"""
-        status.append("Tier 1a: computed from tier-0 WD grid")
+        status.append("Tier 1a: flat dose–response (negative)")
     else:
         status.append("Tier 1a (WD dose–response): pending tier 0")
 
     # ---------- Tier 1: LARS ----------
-    la = A.load_tier("lars")
+    la = A.load_tier("lars", rdir)
     tier1b_html = ""
     if len(la) and len(t0):
         lca_l = A.run_lca(la)
@@ -259,16 +287,75 @@ def main():
                      ["MLP + AdamW (selected)", f"{cfg_m[0]:g}", f"{cfg_m[1]:g}",
                       fmt(100 * A.select_config(lca0, 'mlp')[2])]],
                     ["arm", "lr", "wd", "LCA (%)"])
+        front_l, auc_l = A.pooled_frontier(la, "mlp")
         tier1b_html = f"""
         <h2>Tier 1b — LARS reference arm (scale-invariant optimizer)</h2>
         <p class="prose">If normalization's benefit were only scale-invariance of the
         effective step, LARS on the plain MLP should reproduce the nMLP frontier. LARS is
-        swept on its own LR grid.</p>
+        swept on its own LR grid. <b>It does not:</b> at all 10 LARS configs the
+        MLP collapses to old-class accuracy 0 within the first phase-2 epoch
+        (pooled frontier AUC {auc_l:.4f}, vs nMLP ~0.06), while reaching the
+        highest plasticity in the study (new-class acc up to 0.71). Optimizer-level
+        scale invariance does not produce the normalized architecture's
+        transient stability.</p>
         {tab}
         <div class="fig">{fig_lars}</div>"""
-        status.append(f"Tier 1b: {len(la.run_id.unique())} runs")
+        status.append(f"Tier 1b: {len(la.run_id.unique())} runs — LARS collapses instantly")
     else:
         status.append("Tier 1b (LARS): pending")
+
+    # ---------- Tier 1c: low-LR MLP control ----------
+    low = A.load_tier("mlp-lowlr", rdir)
+    tier1c_html = ""
+    if len(low) and len(t0):
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        mlp_all = pd.concat([t0[t0.arm == "mlp"], low])
+        front_m, auc_m = A.pooled_frontier(mlp_all, "mlp")
+        front_n, auc_n = A.pooled_frontier(t0, "nmlp")
+        fig_pool = A.fig_pooled_frontier(
+            [("MLP (AdamW, incl. lr 1e-6–3e-6)", A.C1, front_m, auc_m),
+             ("nMLP", A.C2, front_n, auc_n)],
+            title="Pooled frontier with the low-LR ELR control")
+        p2l = A.phase2(low)
+        fig, axes = plt.subplots(1, 2, figsize=(9, 3.4), sharex=True)
+        for lr, c in [(1e-6, A.C1), (3e-6, A.C3)]:
+            g = p2l[(p2l.lr == lr) & (p2l.wd == 1e-3)].groupby("epoch").agg(
+                old=("old_acc", "mean"), new=("new_acc", "mean"))
+            axes[0].plot(g.index, 100 * g.old, color=c, marker="o", ms=3,
+                         label=f"MLP lr={lr:g}")
+            axes[1].plot(g.index, 100 * g.new, color=c, marker="o", ms=3)
+        g = A.phase2(t0)
+        g = g[(g.arm == "nmlp") & (g.lr == 1e-4) & (g.wd == 1e-3)].groupby("epoch").agg(
+            old=("old_acc", "mean"), new=("new_acc", "mean"))
+        axes[0].plot(g.index, 100 * g.old, color=A.C2, marker="o", ms=3, label="nMLP lr=1e-4")
+        axes[1].plot(g.index, 100 * g.new, color=A.C2, marker="o", ms=3)
+        axes[0].set_ylabel("old-class acc (%)"); axes[1].set_ylabel("new-class acc (%)")
+        for ax in axes:
+            ax.set_xlabel("phase-2 epoch"); ax.grid(alpha=0.3)
+        axes[0].legend(frameon=False)
+        fig_low = A._svg(fig)
+        p1l = low[low.phase == 1]
+        ceilings = ", ".join(f"lr {lr:g}: {g.old_acc.mean():.2f}"
+                             for lr, g in p1l.groupby("lr"))
+        tier1c_html = f"""
+        <h2>Tier 1c — low-LR control: the baseline recovers the nMLP frontier</h2>
+        <p class="prose">Extending the plain MLP's grid down to lr 1e-6–3e-6 reproduces
+        the nMLP's gradual-decay transient point for point (old 46% at new 10%,
+        decaying over ~8 epochs). Its pooled frontier AUC becomes
+        <b>{auc_m:.3f} — equal to or above the nMLP's {auc_n:.3f}</b>.
+        The transient stability advantage Tier 0 found at the nMLP's low-LR end
+        is therefore an effective-step-size effect: the nMLP's scale-invariant
+        weights and eigen-learning-rates map its usable LR range onto much
+        smaller angular steps, and at those steps any arm traverses the same
+        tradeoff. Caveat: the low-LR MLP's phase-1 ceilings are lower
+        ({ceilings}) than the nMLP's (~0.59), so its high-stability points
+        are bought partly with a weaker phase-1 model.</p>
+        <div class="fig">{fig_pool}{fig_low}</div>"""
+        status.append(f"Tier 1c: {len(low.run_id.unique())} runs — ELR explains the frontier")
+    else:
+        status.append("Tier 1c (low-LR control): pending")
 
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     changelog.append(f"{now} — report regenerated ({'; '.join(status)})")
@@ -298,7 +385,7 @@ and is bounded angular motion of representations the reason?</p>
 {chip('per-arm LR×WD sweeps; no shared LR')}
 {chip('5 partitions × 3 seeds, CRN-paired')}
 {chip('pre-registered gate: commit b419d17')}
-{chip('device: Apple M3 Max (MPS), fp32')}
+{chip('device: 2× RTX 3090 (tikgpu06), fp32; M3-Max MPS run agrees')}
 </div></header>
 
 <h2>Status</h2>
@@ -306,14 +393,31 @@ and is bounded angular motion of representations the reason?</p>
 <small>Frontier, not endpoints, is the comparison object. Gate: median paired
 LCA gain ≥ 3.0 pts (CI excl. 0) AND ≥ 60% epoch-grid dominance.</small></div>
 
+<div class="callout gate-fail"><b>Bottom line.</b> Tier 0's pre-registered gate
+<b>fails</b>: the origin result (nMLP simultaneously faster on new classes and
+less forgetting) does not replicate — at every arm's best config, the 5+5 split
+is a total-collapse regime, and the endpoint frontier is a single degenerate
+point for both arms. The nMLP does show a real transient frontier advantage
+(frontier AUC ~0.06 vs ~0.003), but Tier 1's controls attribute it to effective
+step size, not geometry: weight decay cannot retune the plain MLP's effective
+step (Tier 1a, flat dose–response), LARS does not reproduce the stability
+(Tier 1b), and the plain MLP at lr 1e-6–3e-6 recovers the same frontier
+(Tier 1c, AUC 0.071 ≥ nMLP 0.060). Bounded angular motion of
+<i>representations</i> as the mediator remains untested — that is Tier 2's
+feature-displacement penalty experiment, which these results neither license
+nor rule out.</div>
+
 {tier0_html}
 {tier1a_html}
 {tier1b_html}
+{tier1c_html}
 
 <h2>Setup &amp; protocol notes</h2>
 <p class="prose">Phase 1: 15 epochs on 5 classes; head extended by 5 rows;
 phase 2: 15 epochs on the other 5, no rehearsal. Old/new accuracy use argmax
-over all 10 logits (task-agnostic CIL). No augmentation; inputs normalized.
+over all 10 logits (task-agnostic CIL). Augmentation: random crop (pad-4)
++ horizontal flip (added by the 2026-08-10 amendment; without it the MLP
+memorizes).
 Optimizer AdamW unless stated; fresh optimizer state per phase. The nMLP uses
 functionally normalized rows (scale-invariant weights) with learnable per-row
 eigen-learning-rates, unit-norm activations after each hidden layer, and a
