@@ -32,9 +32,21 @@ def line(family, d, lr, seed, epochs, out, logdir, dataset="mnist", extra=""):
     )
 
 
+T3_ARMS = ["nvit_vmf", "nvit_gaussian", "vit_vmf", "vit_gaussian", "vit_vmf_sqrtd"]
+T3_D = [64, 256, 1024]
+T3_SEEDS = [0, 1, 2]
+
+
+def t3_line(arm, d, lr, seed, epochs, out, logdir):
+    return (
+        f"--arm {arm} --d {d} --lr {lr:g} --seed {seed} "
+        f"--epochs {epochs} --out {out} --log-dir {logdir}"
+    )
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--stage", choices=["t1", "pilot", "final"], required=True)
+    p.add_argument("--stage", choices=["t1", "pilot", "final", "t3_pilot", "t3_final"], required=True)
     args = p.parse_args()
 
     lines = []
@@ -50,7 +62,7 @@ def main() -> None:
                     lines.append(
                         line(family, d, lr, 0, 300, "results/t2_pilot_rows", "results/t2_pilot_logs")
                     )
-    else:
+    elif args.stage == "final":
         rows_dir = PROJECT_ROOT / "results" / "t2_pilot_rows"
         best_ll: dict[tuple, float] = {}
         for path in sorted(rows_dir.glob("*.json")):
@@ -75,10 +87,30 @@ def main() -> None:
                     )
         print("selected LRs:", json.dumps({f: {str(d): lr for d, lr in a.items()} for f, a in anchors.items()}))
 
-    out = PROJECT_ROOT / "slurm" / f"t2_tasks_{args.stage}.txt"
+    elif args.stage == "t3_pilot":
+        # per-arm LR selection at the middle anchor dim d=256 only (budget).
+        for arm in T3_ARMS:
+            for lr in LR_GRID:
+                lines.append(t3_line(arm, 256, lr, 0, 60, "results/t3_pilot_rows", "results/t3_pilot_logs"))
+    else:  # t3_final
+        rows_dir = PROJECT_ROOT / "results" / "t3_pilot_rows"
+        best_ll: dict[tuple, float] = {}
+        for path in sorted(rows_dir.glob("*.json")):
+            r = json.loads(path.read_text())
+            best_ll[(r["arm"], r["lr"])] = max(best_ll.get((r["arm"], r["lr"]), -1e30), r["iwae_ll_mean"])
+        for arm in T3_ARMS:
+            lr = max(LR_GRID, key=lambda lr: best_ll.get((arm, lr), -1e30))
+            for d in T3_D:
+                for seed in T3_SEEDS:
+                    lines.append(t3_line(arm, d, lr, seed, 150, "results/t3_rows", "results/t3_logs"))
+        print("selected LRs:", json.dumps({a: max(LR_GRID, key=lambda lr: best_ll.get((a, lr), -1e30)) for a in T3_ARMS}))
+
+    out = PROJECT_ROOT / "slurm" / f"tasks_{args.stage}.txt"
     out.write_text("\n".join(lines) + "\n")
+    runner = "run_t3.py" if args.stage.startswith("t3") else "run_t2.py"
     print(f"{len(lines)} tasks -> {out}")
-    print("submit: sbatch --array=0-%d%%2 --export=ALL,TASKS_FILE=.../%s projects/hyperspherical-vae/slurm/t2_array.slurm" % (len(lines) - 1, out.name))
+    print("submit: sbatch --array=0-%d%%2 --export=ALL,TASKS_FILE=.../%s,RUNNER=.../%s projects/hyperspherical-vae/slurm/t2_array.slurm"
+          % (len(lines) - 1, out.name, runner))
 
 
 if __name__ == "__main__":

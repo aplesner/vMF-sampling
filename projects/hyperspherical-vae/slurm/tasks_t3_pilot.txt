@@ -1,0 +1,15 @@
+--arm nvit_vmf --d 256 --lr 0.0003 --seed 0 --epochs 60 --out results/t3_pilot_rows --log-dir results/t3_pilot_logs
+--arm nvit_vmf --d 256 --lr 0.001 --seed 0 --epochs 60 --out results/t3_pilot_rows --log-dir results/t3_pilot_logs
+--arm nvit_vmf --d 256 --lr 0.003 --seed 0 --epochs 60 --out results/t3_pilot_rows --log-dir results/t3_pilot_logs
+--arm nvit_gaussian --d 256 --lr 0.0003 --seed 0 --epochs 60 --out results/t3_pilot_rows --log-dir results/t3_pilot_logs
+--arm nvit_gaussian --d 256 --lr 0.001 --seed 0 --epochs 60 --out results/t3_pilot_rows --log-dir results/t3_pilot_logs
+--arm nvit_gaussian --d 256 --lr 0.003 --seed 0 --epochs 60 --out results/t3_pilot_rows --log-dir results/t3_pilot_logs
+--arm vit_vmf --d 256 --lr 0.0003 --seed 0 --epochs 60 --out results/t3_pilot_rows --log-dir results/t3_pilot_logs
+--arm vit_vmf --d 256 --lr 0.001 --seed 0 --epochs 60 --out results/t3_pilot_rows --log-dir results/t3_pilot_logs
+--arm vit_vmf --d 256 --lr 0.003 --seed 0 --epochs 60 --out results/t3_pilot_rows --log-dir results/t3_pilot_logs
+--arm vit_gaussian --d 256 --lr 0.0003 --seed 0 --epochs 60 --out results/t3_pilot_rows --log-dir results/t3_pilot_logs
+--arm vit_gaussian --d 256 --lr 0.001 --seed 0 --epochs 60 --out results/t3_pilot_rows --log-dir results/t3_pilot_logs
+--arm vit_gaussian --d 256 --lr 0.003 --seed 0 --epochs 60 --out results/t3_pilot_rows --log-dir results/t3_pilot_logs
+--arm vit_vmf_sqrtd --d 256 --lr 0.0003 --seed 0 --epochs 60 --out results/t3_pilot_rows --log-dir results/t3_pilot_logs
+--arm vit_vmf_sqrtd --d 256 --lr 0.001 --seed 0 --epochs 60 --out results/t3_pilot_rows --log-dir results/t3_pilot_logs
+--arm vit_vmf_sqrtd --d 256 --lr 0.003 --seed 0 --epochs 60 --out results/t3_pilot_rows --log-dir results/t3_pilot_logs
