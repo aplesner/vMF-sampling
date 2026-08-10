@@ -27,9 +27,80 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from src.torch_log_iv import torch_log_iv  # noqa: E402
+from src.torch_log_iv import _U_COEFFICIENTS, torch_log_iv  # noqa: E402
 
 DTYPE = torch.float64
+
+
+def _debye_coeff_matrix(terms: int, device, dtype) -> torch.Tensor:
+    """Padded (terms, max_degree) matrix of the Debye u_k polynomial coeffs."""
+    max_deg = max(len(c) for c in _U_COEFFICIENTS[:terms])
+    mat = torch.zeros(terms, max_deg, device=device, dtype=dtype)
+    for k, coeffs in enumerate(_U_COEFFICIENTS[:terms]):
+        mat[k, : len(coeffs)] = torch.tensor(coeffs, device=device, dtype=dtype)
+    return mat
+
+
+def _log_iv_uniform_fast(order: float, x: torch.Tensor, terms: int) -> torch.Tensor:
+    """Vectorized Debye uniform expansion of log I_order(x) for scalar order.
+
+    Same approximation as src.torch_log_iv._uniform_expansion but with the
+    Horner loops over the u_k polynomials batched into a single loop over
+    polynomial degree: O(degree) kernel launches instead of O(terms*degree).
+    """
+    nu = torch.as_tensor(order, dtype=x.dtype, device=x.device)
+    w = x / nu
+    root = torch.sqrt(1.0 + w * w)
+    t = 1.0 / root
+    eta = root + torch.log(w / (1.0 + root))
+    # u_k(t) = t^k * poly_k(t^2); evaluate all poly_k in one Horner pass.
+    coeffs = _debye_coeff_matrix(terms, x.device, x.dtype)
+    t2 = (t * t).unsqueeze(-1)  # (n, 1)
+    poly = torch.zeros(x.shape + (terms,), dtype=x.dtype, device=x.device)
+    for c in reversed(range(coeffs.shape[1])):
+        poly = poly * t2 + coeffs[:, c]
+    ks = torch.arange(1, terms + 1, dtype=x.dtype, device=x.device)
+    u_k = t.unsqueeze(-1).pow(ks) * poly
+    series = 1.0 + (u_k / nu.pow(ks)).sum(dim=-1)
+    return nu * eta - 0.5 * torch.log(2.0 * math.pi * nu * root) + torch.log(series)
+
+
+def log_iv_fast(order: float, x: torch.Tensor) -> torch.Tensor:
+    """log I_order(x) for scalar order, evaluating only the needed branches.
+
+    Branch conditions replicate CUSF's priority exactly (see
+    src.torch_log_iv.torch_log_iv); with a scalar order most batches need a
+    single branch, avoiding ~5x wasted kernel launches in float64.
+    """
+    o = float(order)
+    safe_x = torch.clamp_min(x, torch.finfo(x.dtype).tiny)
+    log_x = torch.log(safe_x)
+    log_o = math.log(max(o, torch.finfo(x.dtype).tiny))
+    # branch ids in override priority order (later overrides earlier)
+    branch = torch.zeros_like(safe_x, dtype=torch.long)  # 0 = power series
+    branch = torch.where((safe_x > 19.6931) & (o > 0.7) | (o > 12.6964), torch.full_like(branch, 1), branch)
+    branch = torch.where((safe_x > 35.9074) & (o > 0.6) | (o > 20.1534), torch.full_like(branch, 2), branch)
+    branch = torch.where((safe_x > 84.4153) & (o > 0.46) | (o > 56.9971), torch.full_like(branch, 3), branch)
+    branch = torch.where((safe_x > 274.2377) & (o > 0.3) | (o > 163.6993), torch.full_like(branch, 4), branch)
+    branch = torch.where(
+        ((safe_x > 30.0) & (o < 15.3919)) | (((0.5113 * log_x + 0.7939) > log_o) & (safe_x > 59.6925)),
+        torch.full_like(branch, 5), branch)
+    branch = torch.where(
+        ((safe_x > 1.4e3) & (o < 3.05)) | (((0.6229 * log_x - 3.2318) > log_o) & (o > 3.1)),
+        torch.full_like(branch, 6), branch)
+
+    result = torch.empty_like(safe_x)
+    for bid, terms in ((1, 13), (2, 9), (3, 6), (4, 4)):
+        mask = branch == bid
+        if bool(mask.any()):
+            result = torch.where(mask, _log_iv_uniform_fast(o, safe_x, terms), result)
+    if bool((branch == 0).any()) or bool((branch >= 5).any()):
+        # Rare path: power series or mu expansions — defer to the reference.
+        slow = torch_log_iv(torch.as_tensor(o, dtype=x.dtype, device=x.device), safe_x)
+        result = torch.where(branch >= 5, slow, result)
+        result = torch.where(branch == 0, slow, result)
+    result = torch.where(x == 0.0, torch.full_like(result, -torch.inf), result)
+    return result
 
 
 def _as_tensor(value, like: torch.Tensor | None = None) -> torch.Tensor:
