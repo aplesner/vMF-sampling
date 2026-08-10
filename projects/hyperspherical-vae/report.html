@@ -181,6 +181,14 @@ pairing uses seed, not card.</p></div>
   <li><strong>2026-07-27</strong> — Project scaffolded. Gate G1 restated in terms of
   &#961; = A_m(&#954;) and KL/m (supersedes the unsatisfiable v1 conjunction); V1–V5
   verified numerically; 14 unit tests green. T1–T5 not started.</li>
+  <li><strong>2026-07-27 (3)</strong> — <strong>Negative found &amp; fixed:</strong>
+  early stopping fired during KL warm-up (best val set at &beta; &lt; 1, patience
+  expired ~epoch 59, before &beta; = 1): every T1 cell missed Davidson by 5&ndash;8
+  nats. Guard added (no early-stop bookkeeping until warm-up completes);
+  first re-run cell (N-VAE d=2) is now within 2 s.d. of Table 1. vMF train-step
+  overhead at d = 1024 reduced ~10&times; (fused single-Bessel-eval KL/log&nbsp;C/A +
+  GPU-native rejection sampling: 64 &rarr; 6 ms/batch). T1 (50 runs) + T2 LR pilot
+  (36 runs) running on the 3090 array.</li>
   <li><strong>2026-07-27 (2)</strong> — Differentiable per-row batched vMF sampler
   (Ulrich + Naesseth/Davidson reparameterization; analytic &kappa; gradients for
   KL and log C_m) with 10 statistical tests green; T1a confirmed (reference
