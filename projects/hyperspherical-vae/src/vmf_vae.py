@@ -28,7 +28,12 @@ from pathlib import Path
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vmf_kl import kl_vmf_uniform, log_vmf_log_norm  # noqa: E402
+from vmf_kl import (  # noqa: E402
+    bessel_ratio_A,
+    kl_grad_kappa,
+    kl_vmf_uniform,
+    log_vmf_log_norm,
+)
 
 
 def _work_dtype(kappa: torch.Tensor) -> torch.dtype:
@@ -148,26 +153,62 @@ def sample_vmf(
     return z, correction
 
 
-def _log_norm_for_correction(kappa: torch.Tensor, m: int) -> torch.Tensor:
-    """log C_m(κ) differentiable in κ, float64 even on MPS (via CPU round-trip)."""
+def _device64(kappa: torch.Tensor) -> tuple[torch.Tensor, bool]:
+    """float64 view for numerics; MPS round-trips through CPU."""
     if kappa.device.type == "mps":
-        return log_vmf_log_norm(m, kappa.to("cpu", torch.float64)).to(
-            kappa.device, torch.float32
-        )
-    return log_vmf_log_norm(m, kappa.to(torch.float64))
+        return kappa.detach().cpu().double(), True
+    return kappa.detach().to(torch.float64), False
+
+
+class _KLToUniformFn(torch.autograd.Function):
+    """KL(vMF‖U) with the analytic derivative d KL/dκ = κ A_m'(κ).
+
+    Same pattern as Davidson et al. (their Bessel was not autodiff-able either,
+    so they derived eq. 6), but with a log-Bessel path that stays finite at
+    m >= 1024 and a derivative exact to ~1e-13.
+    """
+
+    @staticmethod
+    def forward(ctx, kappa: torch.Tensor, m: int):
+        k64, was_mps = _device64(kappa)
+        kl = kl_vmf_uniform(k64, m)
+        ctx.save_for_backward(kl_grad_kappa(k64, m))
+        ctx.was_mps = was_mps
+        return kl.to(kappa.device, kappa.dtype)
+
+    @staticmethod
+    def backward(ctx, gout):
+        (deriv,) = ctx.saved_tensors
+        g = gout.detach().cpu().double() * deriv
+        return g.to(gout.device, gout.dtype), None
+
+
+class _LogVmfNormFn(torch.autograd.Function):
+    """log C_m(κ) with the analytic derivative d log C_m/dκ = -A_m(κ)."""
+
+    @staticmethod
+    def forward(ctx, kappa: torch.Tensor, m: int):
+        k64, was_mps = _device64(kappa)
+        log_c = log_vmf_log_norm(m, k64)
+        ctx.save_for_backward(-bessel_ratio_A(k64, m))
+        ctx.was_mps = was_mps
+        return log_c.to(kappa.device, kappa.dtype)
+
+    @staticmethod
+    def backward(ctx, gout):
+        (deriv,) = ctx.saved_tensors
+        g = gout.detach().cpu().double() * deriv
+        return g.to(gout.device, gout.dtype), None
+
+
+def _log_norm_for_correction(kappa: torch.Tensor, m: int) -> torch.Tensor:
+    """log C_m(κ), differentiable in κ via the analytic -A_m(κ) gradient."""
+    return _LogVmfNormFn.apply(kappa, m)
 
 
 def kl_to_uniform(kappa: torch.Tensor, m: int) -> torch.Tensor:
-    """KL(vMF(κ)‖U(S^{m-1})), differentiable in κ, computed in float64.
-
-    On MPS the computation round-trips through CPU float64 (κ is one scalar
-    per row, so this is cheap); gradients flow through the casts.
-    """
-    if kappa.device.type == "mps":
-        return kl_vmf_uniform(kappa.to("cpu", torch.float64), m).to(
-            kappa.device, kappa.dtype
-        )
-    return kl_vmf_uniform(kappa, m).to(kappa.dtype)
+    """KL(vMF(κ)‖U(S^{m-1})), float64 numerics, analytic κ gradient."""
+    return _KLToUniformFn.apply(kappa, m)
 
 
 def svae_elbo_terms(
