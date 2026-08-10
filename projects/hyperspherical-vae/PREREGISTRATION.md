@@ -76,6 +76,8 @@ Verified by `scripts/verify_g1.py` (float64, CUSF/torch log-Bessel path;
 
 ## Success criteria for the tiers (pre-registered before runs)
 
+Pre-registration commit: `c55a906`.
+
 - **T1 (validity, gates T2/T3).** Reference SciPy-based S-VAE fails to produce
   a finite loss at m ∈ {1024, 4096}; this repo's path trains with finite loss
   everywhere. Davidson MNIST reproduction at d ≤ 40: S-VAE and N-VAE LL
@@ -93,9 +95,8 @@ Verified by `scripts/verify_g1.py` (float64, CUSF/torch log-Bessel path;
 - **T5.** Collapse diagnostic is the effective rank/dispersion of the
   aggregate {μ(x)} against a matched null, not a κ histogram.
 
-Commit hash of this pre-registration: recorded in the changelog of
-`report.html` immediately after committing this file (chicken-and-egg: the
-hash follows the commit, the criteria precede every run).
+Commit hash of this pre-registration: **c55a906** (the criteria precede every
+run; the hash necessarily follows the commit that contains this file).
 
 ## Two-GPU protocol (T2/T3)
 
