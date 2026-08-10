@@ -179,7 +179,7 @@ class _KLToUniformFn(torch.autograd.Function):
     @staticmethod
     def backward(ctx, gout):
         (deriv,) = ctx.saved_tensors
-        g = gout.detach().cpu().double() * deriv
+        g = gout.detach().to(deriv.device, torch.float64) * deriv
         return g.to(gout.device, gout.dtype), None
 
 
@@ -197,7 +197,7 @@ class _LogVmfNormFn(torch.autograd.Function):
     @staticmethod
     def backward(ctx, gout):
         (deriv,) = ctx.saved_tensors
-        g = gout.detach().cpu().double() * deriv
+        g = gout.detach().to(deriv.device, torch.float64) * deriv
         return g.to(gout.device, gout.dtype), None
 
 
