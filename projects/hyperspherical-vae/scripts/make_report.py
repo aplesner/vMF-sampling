@@ -190,12 +190,13 @@ def main() -> None:
     &kappa; from m = 512 up (9/10 rows at m &ge; 1024); ours finite everywhere,
     3.7e-11 agreement where SciPy works.</div></div>
   <div class="card"><div class="k">T1b — MNIST reproduction</div>
-    <span class="pill warn">harness ready</span>
-    <div>d &le; 40, S-VAE/N-VAE, runs on the T2 array; needs cluster (unreachable
-    at last attempt).</div></div>
+    <span class="pill ok">N-VAE 5/5 cells OK</span>
+    <div>Gaussian arm within 2 s.d. of Davidson Table 1 at every d (IW-500).
+    S-VAE arm running; first cell borderline (&minus;108.73 vs &minus;108.43&plusmn;0.09, n=1).</div></div>
   <div class="card"><div class="k">T2 — dimension sweep</div>
-    <span class="pill warn">not started</span>
-    <div>d &isin; &#123;5&hellip;1024&#125; &times; 4 arms &times; 5 seeds, per-arm LR sweeps.</div></div>
+    <span class="pill warn">LR pilot running</span>
+    <div>36-run pilot (LR &isin; &#123;3e-4, 1e-3, 3e-3&#125; &times; anchor d &isin; &#123;20, 128, 1024&#125;
+    &times; 4 arms) ~60% done; final 180-run grid follows at per-(arm,d) selected LR.</div></div>
   <div class="card"><div class="k">T3 — nViT-VAE (core new experiment)</div>
     <span class="pill warn">not started</span>
     <div>vMF latent in nViT encoder/decoder vs 4 controls incl. the &#8730;d-rescale
