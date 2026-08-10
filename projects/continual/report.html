@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project 1 — Normalized networks in class-incremental learning</title>
+<style>
+:root { --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink-2:#52514e;
+--muted:#898781; --grid:#e1e0d9; --border:rgba(11,11,11,.10);
+--accent:#2a78d6; --s1:#2a78d6; --s2:#1baf7a; --s3:#4a3aa7;
+--code-bg:#f2f1ed; --callout-bg:#f2f5fa; }
+@media (prefers-color-scheme: dark) { :root { --page:#0d0d0d; --surface:#1a1a19;
+--ink:#fff; --ink-2:#c3c2b7; --muted:#898781; --grid:#2c2c2a;
+--border:rgba(255,255,255,.10); --accent:#3987e5; --s1:#3987e5; --s2:#199e70;
+--s3:#9085e9; --code-bg:#232322; --callout-bg:#1d2430; } }
+html,body{background:var(--page)!important;color-scheme:light dark}
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink)!important;
+line-height:1.6;font-size:15.5px;margin:0}
+.wrap{max-width:1060px;margin:0 auto;padding:0 24px 96px;background:var(--page);color:var(--ink)}
+.prose{max-width:760px}
+header.report-head{padding:56px 0 8px;max-width:760px}
+.eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
+margin:0 0 14px;font-weight:600}
+h1{font-size:33px;line-height:1.22;margin:0 0 12px;letter-spacing:-.015em;font-weight:700}
+.subtitle{color:var(--ink-2);font-size:17px;margin:0 0 22px;max-width:62ch}
+.meta-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+.chip{font-size:12.5px;color:var(--ink-2);border:1px solid var(--border);
+border-radius:999px;padding:3px 11px;background:var(--surface)}
+h2{font-size:22px;margin:40px 0 10px;letter-spacing:-.01em}
+h3{font-size:17px;margin:26px 0 8px}
+table{border-collapse:collapse;margin:14px 0;font-size:14px;background:var(--surface)}
+th,td{border:1px solid var(--border);padding:6px 12px;text-align:right}
+th:first-child,td:first-child{text-align:left}
+th{background:var(--code-bg);font-weight:600}
+code{background:var(--code-bg);padding:1px 5px;border-radius:4px;font-size:13.5px}
+.callout{background:var(--callout-bg);border:1px solid var(--border);border-radius:10px;
+padding:14px 18px;margin:18px 0}
+.gate-pass{border-left:4px solid var(--s2)}
+.gate-fail{border-left:4px solid #d64541}
+.gate-open{border-left:4px solid var(--muted)}
+.fig svg{max-width:100%;height:auto}
+small{color:var(--muted)}
+</style></head>
+<body><div class="wrap">
+<header class="report-head">
+<p class="eyebrow">Research program on hyperspherical representations · Project 1</p>
+<h1>Normalized networks in class-incremental learning</h1>
+<p class="subtitle">Does nGPT-style hyperspherical normalization improve the
+stability–plasticity frontier in rehearsal-free class-incremental learning —
+and is bounded angular motion of representations the reason?</p>
+<div class="meta-chips">
+<span class="chip">substrate: CIFAR-10 5+5, no rehearsal</span>
+<span class="chip">arms: tuned MLP vs nGPT-style nMLP</span>
+<span class="chip">per-arm LR×WD sweeps; no shared LR</span>
+<span class="chip">5 partitions × 3 seeds, CRN-paired</span>
+<span class="chip">pre-registered gate: commit b419d17</span>
+<span class="chip">device: Apple M3 Max (MPS), fp32</span>
+</div></header>
+
+<h2>Status</h2>
+<div class="callout gate-open"><b>Tier 0: 13/750 runs · Tier 1a (WD dose–response): pending · Tier 1b (LARS): pending</b><br>
+<small>Frontier, not endpoints, is the comparison object. Gate: median paired
+LCA gain ≥ 3.0 pts (CI excl. 0) AND ≥ 60% epoch-grid dominance.</small></div>
+
+<h2>Tier 0 — replication gate (5+5 CIFAR-10, no rehearsal)</h2><div class='callout gate-open'>Sweep in progress: 13/750 runs. Both arms needed before any comparison.</div>
+
+
+
+<h2>Setup &amp; protocol notes</h2>
+<p class="prose">Phase 1: 15 epochs on 5 classes; head extended by 5 rows;
+phase 2: 15 epochs on the other 5, no rehearsal. Old/new accuracy use argmax
+over all 10 logits (task-agnostic CIL). No augmentation; inputs normalized.
+Optimizer AdamW unless stated; fresh optimizer state per phase. The nMLP uses
+functionally normalized rows (scale-invariant weights) with learnable per-row
+eigen-learning-rates, unit-norm activations after each hidden layer, and a
+cosine classifier with learnable logit scale — weight decay is therefore its
+effective-LR knob, which is exactly what Tier 1a exploits for the control.
+Negative results and failed gates are reported as-is.</p>
+
+<h2>Changelog</h2>
+<p class="prose"><small>2026-08-10 14:44 — report regenerated (Tier 0: 13/750 runs; Tier 1a (WD dose–response): pending; Tier 1b (LARS): pending)</small></p>
+</div></body></html>

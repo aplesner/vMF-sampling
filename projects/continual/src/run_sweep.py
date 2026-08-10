@@ -24,7 +24,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 RESULTS = os.path.join(ROOT, "results")
 
-LR_GRID = [1e-4, 3e-4, 1e-3, 3e-3, 1e-2]
+# Per-arm LR grids: arms are never compared at a shared LR; each grid
+# brackets its arm's useful range (MLP collapses at >=1e-4-ish on the
+# stability axis; the scale-invariant nMLP needs 100x larger steps).
+LR_GRID = {"mlp": [1e-5, 3e-5, 1e-4, 3e-4, 1e-3],
+           "nmlp": [1e-4, 3e-4, 1e-3, 3e-3, 1e-2]}
 WD_GRID = [0.0, 1e-4, 1e-3, 1e-2, 1e-1]
 LARS_LR_GRID = [0.03, 0.1, 0.3, 1.0, 3.0]
 LARS_WD_GRID = [0.0, 1e-3]
@@ -40,7 +44,7 @@ def build_grid(tier, args):
     runs = []
     if tier == "tier0":
         for arm in ("mlp", "nmlp"):
-            for lr in LR_GRID:
+            for lr in LR_GRID[arm]:
                 for wd in WD_GRID:
                     runs.append(dict(arm=arm, opt_name="adamw", lr=lr, wd=wd))
     elif tier == "wd-dose":
@@ -57,6 +61,11 @@ def build_grid(tier, args):
         for p in range(N_PARTITIONS):
             for s in range(N_SEEDS):
                 full.append(dict(cfg, partition=p, seed=2000 + s))
+    if tier == "tier0":
+        # interleave arms so both make progress together (round-robin sharding)
+        mlp_runs = [c for c in full if c["arm"] == "mlp"]
+        nmlp_runs = [c for c in full if c["arm"] == "nmlp"]
+        full = [c for pair in zip(mlp_runs, nmlp_runs) for c in pair]
     return full
 
 
@@ -71,7 +80,7 @@ def main():
     ap.add_argument("--nshards", type=int, default=1)
     ap.add_argument("--epochs-p1", type=int, default=15)
     ap.add_argument("--epochs-p2", type=int, default=15)
-    ap.add_argument("--batch-size", type=int, default=256)
+    ap.add_argument("--batch-size", type=int, default=512)
     ap.add_argument("--lr", type=float, default=None)
     ap.add_argument("--wd-points", type=str, default="")
     ap.add_argument("--device", default="mps" if torch.backends.mps.is_available() else "cpu")
@@ -107,7 +116,7 @@ def main():
             rows = run_config(**cfg, partitions=partitions,
                               data_dir=args.data_dir, device=args.device,
                               epochs_p1=args.epochs_p1, epochs_p2=args.epochs_p2,
-                              batch_size=args.batch_size)
+                              batch_size=args.batch_size, augment=True)
             wall = time.time() - t0
             for r in rows:
                 w.writerow(dict(run_id=rid, tier=args.tier, arm=cfg["arm"],

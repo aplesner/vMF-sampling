@@ -46,9 +46,20 @@ def make_partitions(n_partitions=5, base_seed=1000):
 
 
 class SplitData:
-    def __init__(self, data_dir, device, classes):
+    """Class subset with labels remapped to contiguous head positions.
+
+    classes: original CIFAR-10 class ids, in head-row order. Labels are
+    stored as their position in `classes` plus `offset` (0 for phase 1,
+    5 for phase 2), so cross-entropy targets always match head rows and
+    evaluation argmax runs over the full 10-way head.
+    """
+
+    def __init__(self, data_dir, device, classes, offset=0):
         xtr, ytr, xte, yte = load_cifar10(data_dir, device)
+        lut = torch.full((10,), -1, dtype=torch.long, device=device)
+        for pos, c in enumerate(classes):
+            lut[c] = pos + offset
         mtr = torch.isin(ytr, torch.tensor(classes, device=device))
         mte = torch.isin(yte, torch.tensor(classes, device=device))
-        self.xtr, self.ytr = xtr[mtr], ytr[mtr]
-        self.xte, self.yte = xte[mte], yte[mte]
+        self.xtr, self.ytr = xtr[mtr], lut[ytr[mtr]]
+        self.xte, self.yte = xte[mte], lut[yte[mte]]
