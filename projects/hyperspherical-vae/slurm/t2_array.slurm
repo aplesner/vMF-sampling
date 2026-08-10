@@ -13,13 +13,17 @@ set -euo pipefail
 
 REPO=/itet-stor/aplesner/net_scratch/vmf-sampling/repo
 TASKS_FILE=${TASKS_FILE:-$REPO/projects/hyperspherical-vae/slurm/t2_tasks.txt}
+# GPU venv: torch 2.8.0+cu128 (cluster driver 535 = CUDA 12.2; the repo lock's
+# cu130 build cannot initialize CUDA here).
+PY=/itet-stor/aplesner/net_scratch/vmf-sampling/venvs/p4-gpu/bin/python
 NODE_SCRATCH=/scratch/aplesner/p4
 mkdir -p "$NODE_SCRATCH"
 
 # Node-local data (guard: no re-transfer across jobs on the same node).
 export VMF_DATA_ROOT="$NODE_SCRATCH/data"
+RUNNER=${RUNNER:-$REPO/projects/hyperspherical-vae/scripts/run_t2.py}
 
 cd "$REPO"
 CMD=$(sed -n "$((SLURM_ARRAY_TASK_ID + 1))p" "$TASKS_FILE")
 echo "task $SLURM_ARRAY_TASK_ID on $(hostname) gpu $CUDA_VISIBLE_DEVICES: $CMD"
-uv run python projects/hyperspherical-vae/scripts/run_t2.py $CMD
+"$PY" "$RUNNER" $CMD
