@@ -1,0 +1,2 @@
+--dataset mnist --family gaussian --d 40 --lr 1e-3 --seed 0 --epochs 2 --warmup-epochs 2 --iwae-samples 20 --out results/smoke_rows --log-dir results/smoke_logs
+--dataset mnist --family vmf --d 1024 --lr 1e-3 --seed 0 --epochs 2 --warmup-epochs 2 --iwae-samples 20 --out results/smoke_rows --log-dir results/smoke_logs
