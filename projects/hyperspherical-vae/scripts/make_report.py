@@ -184,10 +184,15 @@ def main() -> None:
     <span class="pill ok">fixed &amp; verified</span>
     <div>Restated in terms of &#961; = A_m(&#954;) and KL/m; numerically verified,
     14 unit tests green. See below.</div></div>
-  <div class="card"><div class="k">T1 — numerical validity</div>
-    <span class="pill warn">not started</span>
-    <div>Reference S-VAE must fail at m &isin; &#123;1024, 4096&#125;; ours must not;
-    MNIST d &le; 40 reproduction within 2 s.d.</div></div>
+  <div class="card"><div class="k">T1a — numerical validity</div>
+    <span class="pill ok">confirmed</span>
+    <div>Reference SciPy S-VAE numerics are non-finite at encoder-realistic
+    &kappa; from m = 512 up (9/10 rows at m &ge; 1024); ours finite everywhere,
+    3.7e-11 agreement where SciPy works.</div></div>
+  <div class="card"><div class="k">T1b — MNIST reproduction</div>
+    <span class="pill warn">harness ready</span>
+    <div>d &le; 40, S-VAE/N-VAE, runs on the T2 array; needs cluster (unreachable
+    at last attempt).</div></div>
   <div class="card"><div class="k">T2 — dimension sweep</div>
     <span class="pill warn">not started</span>
     <div>d &isin; &#123;5&hellip;1024&#125; &times; 4 arms &times; 5 seeds, per-arm LR sweeps.</div></div>
@@ -253,6 +258,17 @@ nats); round-trip inversion tests are exact. Full log:
 <code>results/g1_verification_log.txt</code>; CSVs under <code>results/</code>.</p>
 </div>
 
+<h2>T1a — the reference S-VAE is numerically invalid at high m</h2>
+<div class="prose"><p>Reproducing the exact numerics of Davidson&rsquo;s reference
+implementation (KL via <code>scipy.special.ive</code>, eq.-6 ive-ratio gradient):
+the forward KL and its gradient go non-finite at the &kappa; values an S-VAE
+encoder actually emits (softplus init &asymp; 0.54, trend &kappa; &asymp; 3&ndash;20)
+from m = 512 upward, and in 9/10 probed (&kappa;, m) cells at m &ge; 1024 — the
+loss is NaN before training starts. Our CUSF/torch log-Bessel path agrees with
+the reference to 3.7e-11 (max rel) wherever the reference is finite, and stays
+finite through m = 4096 (tested through 8192 in the unit tests). Full grid:
+<code>results/t1_numerical_validity.csv</code>.</p></div>
+
 <h2>Two-GPU protocol (T2/T3)</h2>
 <div class="prose"><p>Two RTX 3090s as independent workers — one
 (arm &times; d &times; seed) run per card, never DDP. Every arm gets its own LR sweep;
@@ -264,6 +280,13 @@ pairing uses seed, not card.</p></div>
   <li><strong>2026-07-27</strong> — Project scaffolded. Gate G1 restated in terms of
   &#961; = A_m(&#954;) and KL/m (supersedes the unsatisfiable v1 conjunction); V1–V5
   verified numerically; 14 unit tests green. T1–T5 not started.</li>
+  <li><strong>2026-07-27 (2)</strong> — Differentiable per-row batched vMF sampler
+  (Ulrich + Naesseth/Davidson reparameterization; analytic &kappa; gradients for
+  KL and log C_m) with 10 statistical tests green; T1a confirmed (reference
+  SciPy path NaN at encoder-realistic &kappa; from m = 512); T1/T2 harness
+  (4 arms, IW-500, gradient-variance decomposition, aggregate-&mu; diagnostics),
+  Slurm array for two 3090s as independent workers. Cluster unreachable at
+  last attempt — T1b/T2 submission pending.</li>
 </ul>
 </div>
 </body>
