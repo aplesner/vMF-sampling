@@ -34,14 +34,18 @@ DTYPE = torch.float64
 
 def _as_tensor(value, like: torch.Tensor | None = None) -> torch.Tensor:
     if isinstance(value, torch.Tensor):
-        return value.to(DTYPE)
-    return torch.tensor(value, dtype=DTYPE)
+        out = value.to(DTYPE)
+    else:
+        out = torch.tensor(value, dtype=DTYPE)
+    if like is not None and out.device != like.device:
+        out = out.to(like.device)
+    return out
 
 
 def log_bessel_iv(order, kappa) -> torch.Tensor:
     """log I_order(kappa), float64, finite for order >= 512 where SciPy fails."""
-    order_t = _as_tensor(order)
     kappa_t = _as_tensor(kappa)
+    order_t = _as_tensor(order, like=kappa_t)
     order_t, kappa_t = torch.broadcast_tensors(order_t, kappa_t)
     return torch_log_iv(order_t, kappa_t)
 
@@ -55,7 +59,7 @@ def log_surface_area(m) -> torch.Tensor:
 def bessel_ratio_A(kappa, m) -> torch.Tensor:
     """A_m(kappa) = I_{m/2}(kappa) / I_{m/2-1}(kappa), with A_m(0) = 0."""
     kappa_t = _as_tensor(kappa)
-    m_t = _as_tensor(m)
+    m_t = _as_tensor(m, like=kappa_t)
     kappa_t, m_t = torch.broadcast_tensors(kappa_t, m_t)
     nu = m_t / 2.0 - 1.0
     safe_kappa = torch.clamp(kappa_t, min=1e-300)
@@ -69,7 +73,7 @@ def bessel_ratio_A_prime(kappa, m) -> torch.Tensor:
     At kappa -> 0, A_m(kappa) ~ kappa/m, so A_m'(0) = 1/m.
     """
     kappa_t = _as_tensor(kappa)
-    m_t = _as_tensor(m)
+    m_t = _as_tensor(m, like=kappa_t)
     kappa_t, m_t = torch.broadcast_tensors(kappa_t, m_t)
     a = bessel_ratio_A(kappa_t, m_t)
     safe_kappa = torch.clamp(kappa_t, min=1e-12)
@@ -82,8 +86,8 @@ def log_vmf_log_norm(m, kappa) -> torch.Tensor:
 
     Limit at kappa -> 0 is -log S_{m-1} (uniform density).
     """
-    m_t = _as_tensor(m)
     kappa_t = _as_tensor(kappa)
+    m_t = _as_tensor(m, like=kappa_t)
     m_t, kappa_t = torch.broadcast_tensors(m_t, kappa_t)
     nu = m_t / 2.0 - 1.0
     safe_kappa = torch.clamp(kappa_t, min=1e-300)
@@ -112,7 +116,7 @@ def kl_vmf_uniform(kappa, m) -> torch.Tensor:
     The worst error at the switch is ~m^1.5/6.7e7 nats (5e-4 at m=1024).
     """
     kappa_t = _as_tensor(kappa)
-    m_t = _as_tensor(m)
+    m_t = _as_tensor(m, like=kappa_t)
     kappa_t, m_t = torch.broadcast_tensors(kappa_t, m_t)
     log_s = log_surface_area(m_t)
     kl_direct = (
@@ -133,7 +137,7 @@ def kl_vmf_uniform(kappa, m) -> torch.Tensor:
 def kl_grad_kappa(kappa, m) -> torch.Tensor:
     """d KL / d kappa = kappa * A_m'(kappa) (Davidson et al. eq. 6, simplified)."""
     kappa_t = _as_tensor(kappa)
-    m_t = _as_tensor(m)
+    m_t = _as_tensor(m, like=kappa_t)
     kappa_t, m_t = torch.broadcast_tensors(kappa_t, m_t)
     return kappa_t * bessel_ratio_A_prime(kappa_t, m_t)
 
@@ -144,7 +148,7 @@ def invert_A(rho, m, *, tol: float = 1e-12, max_iter: int = 200) -> torch.Tensor
     A_m is strictly increasing in kappa, so the inverse is unique.
     """
     rho_t = _as_tensor(rho)
-    m_t = _as_tensor(m)
+    m_t = _as_tensor(m, like=rho_t)
     rho_t, m_t = torch.broadcast_tensors(rho_t, m_t)
     if torch.any((rho_t < 0.0) | (rho_t >= 1.0)):
         raise ValueError("rho must lie in [0, 1)")
@@ -182,7 +186,7 @@ def invert_kl(kl_target, m, *, tol: float = 1e-10, max_iter: int = 200) -> torch
     so the inverse is unique for kl_target > 0.
     """
     target_t = _as_tensor(kl_target)
-    m_t = _as_tensor(m)
+    m_t = _as_tensor(m, like=target_t)
     target_t, m_t = torch.broadcast_tensors(target_t, m_t)
     if torch.any(target_t < 0.0):
         raise ValueError("kl_target must be >= 0")
