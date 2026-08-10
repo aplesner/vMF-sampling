@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project 6 — Measuring representation geometry: nulls, feasibility, refusal</title>
+<style>
+  :root {
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --accent: #2a78d6;
+    --s1: #2a78d6;
+    --s2: #1baf7a;
+    --s3: #4a3aa7;
+    --code-bg: #f2f1ed;
+    --callout-bg: #f2f5fa;
+    /* semantic severity — separate from the accent hue */
+    --ok-bg: rgba(27, 175, 122, 0.13);   --ok-ink: #0f6b49;
+    --warn-bg: rgba(214, 158, 42, 0.16); --warn-ink: #7d5a06;
+    --bad-bg: rgba(214, 108, 42, 0.17);  --bad-ink: #8a3d09;
+    --crit-bg: rgba(201, 52, 52, 0.16);  --crit-ink: #92211f;
+    --note-bg: #f4f2ee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+      --muted: #898781; --grid: #2c2c2a; --baseline: #383835;
+      --border: rgba(255,255,255,0.10); --accent: #3987e5;
+      --s1: #3987e5; --s2: #199e70; --s3: #9085e9;
+      --code-bg: #232322; --callout-bg: #1d2430;
+      --ok-bg: rgba(25, 158, 112, 0.22);  --ok-ink: #5fd6a8;
+      --warn-bg: rgba(214, 158, 42, 0.20); --warn-ink: #e0b356;
+      --bad-bg: rgba(214, 108, 42, 0.22);  --bad-ink: #ef9d63;
+      --crit-bg: rgba(201, 52, 52, 0.24);  --crit-ink: #f0847f;
+      --note-bg: #1e1e1d;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+    --muted: #898781; --grid: #2c2c2a; --baseline: #383835;
+    --border: rgba(255,255,255,0.10); --accent: #3987e5;
+    --s1: #3987e5; --s2: #199e70; --s3: #9085e9;
+    --code-bg: #232322; --callout-bg: #1d2430;
+    --ok-bg: rgba(25, 158, 112, 0.22);  --ok-ink: #5fd6a8;
+    --warn-bg: rgba(214, 158, 42, 0.20); --warn-ink: #e0b356;
+    --bad-bg: rgba(214, 108, 42, 0.22);  --bad-ink: #ef9d63;
+    --crit-bg: rgba(201, 52, 52, 0.24);  --crit-ink: #f0847f;
+    --note-bg: #1e1e1d;
+  }
+  :root[data-theme="light"] {
+    --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e;
+    --muted: #898781; --grid: #e1e0d9; --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10); --accent: #2a78d6;
+    --s1: #2a78d6; --s2: #1baf7a; --s3: #4a3aa7;
+    --code-bg: #f2f1ed; --callout-bg: #f2f5fa;
+    --ok-bg: rgba(27, 175, 122, 0.13);   --ok-ink: #0f6b49;
+    --warn-bg: rgba(214, 158, 42, 0.16); --warn-ink: #7d5a06;
+    --bad-bg: rgba(214, 108, 42, 0.17);  --bad-ink: #8a3d09;
+    --crit-bg: rgba(201, 52, 52, 0.16);  --crit-ink: #92211f;
+    --note-bg: #f4f2ee;
+  }
+
+  html, body { background: var(--page); color-scheme: light dark; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink); line-height: 1.6; font-size: 15.5px; margin: 0;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 0 24px 96px; }
+  .prose { max-width: 760px; }
+
+  header.report-head { padding: 56px 0 8px; max-width: 780px; }
+  .eyebrow {
+    font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 14px; font-weight: 600;
+  }
+  h1 {
+    font-size: 33px; line-height: 1.22; margin: 0 0 12px;
+    letter-spacing: -0.015em; text-wrap: balance; font-weight: 700;
+  }
+  .subtitle { color: var(--ink-2); font-size: 17px; margin: 0 0 22px; max-width: 64ch; }
+  .meta-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .chip {
+    font-size: 12.5px; color: var(--ink-2); border: 1px solid var(--border);
+    border-radius: 999px; padding: 3px 11px; background: var(--surface); white-space: nowrap;
+  }
+  .chip b { color: var(--ink); font-weight: 600; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin: 30px 0 8px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px 14px; }
+  .tile .label { font-size: 12.5px; color: var(--muted); margin: 0 0 6px; }
+  .tile .value { font-size: 30px; font-weight: 650; line-height: 1.1; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .tile .note { font-size: 12.5px; color: var(--ink-2); margin: 0; line-height: 1.45; }
+
+  nav.toc { margin: 34px 0 10px; max-width: 900px; }
+  nav.toc ol { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13.5px; }
+  nav.toc a { color: var(--ink-2); text-decoration: none; border-bottom: 1px solid var(--border); padding-bottom: 1px; }
+  nav.toc a:hover, nav.toc a:focus-visible { color: var(--accent); border-bottom-color: var(--accent); }
+  nav.toc .n { color: var(--muted); font-weight: 600; margin-right: 5px; }
+
+  hr.rule { border: 0; border-top: 1px solid var(--border); margin: 34px 0; }
+
+  section { margin: 0 0 14px; }
+  section > h2 {
+    font-size: 23px; margin: 50px 0 14px; letter-spacing: -0.01em;
+    line-height: 1.25; text-wrap: balance; scroll-margin-top: 24px;
+  }
+  section > h2 .sec-n { color: var(--muted); font-weight: 600; margin-right: 10px; font-size: 18px; }
+  section h3 { font-size: 17px; margin: 30px 0 8px; }
+  section h4 { font-size: 14.5px; margin: 22px 0 6px; color: var(--ink); }
+  p, li { max-width: 72ch; color: var(--ink); }
+  section p { margin: 0 0 14px; }
+  ul, ol.body-list { padding-left: 22px; }
+  li { margin: 0 0 7px; }
+  a { color: var(--accent); }
+  code, .equation, pre { font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace; }
+  code { font-size: 0.885em; background: var(--code-bg); border-radius: 4px; padding: 1px 5px; }
+  pre.code-block {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; overflow-x: auto; font-size: 12.8px; line-height: 1.55; max-width: 860px;
+  }
+  pre.code-block code { background: none; padding: 0; font-size: inherit; }
+  .equation {
+    background: var(--code-bg); border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0; padding: 12px 18px; margin: 16px 0;
+    font-size: 14px; line-height: 1.9; overflow-x: auto; max-width: 760px; white-space: pre-wrap;
+  }
+  .callout {
+    background: var(--callout-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 13px 17px; margin: 18px 0; font-size: 14px; color: var(--ink-2); max-width: 800px;
+  }
+  .callout strong { color: var(--ink); }
+  .callout code { background: rgba(137,135,129,0.16); }
+  .callout.warn { background: var(--warn-bg); }
+  .callout.crit { background: var(--crit-bg); }
+
+  .table-scroll { overflow-x: auto; margin: 18px 0; }
+  table.data-table {
+    border-collapse: collapse; font-size: 13.5px; min-width: 480px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  }
+  table.data-table th, table.data-table td {
+    text-align: left; padding: 7px 13px; border-bottom: 1px solid var(--grid); vertical-align: top;
+  }
+  table.data-table thead th {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--baseline); white-space: nowrap;
+  }
+  table.data-table tbody tr:last-child td { border-bottom: 0; }
+  table.data-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  table.data-table td.rowhead { font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
+  table.data-table tbody th {
+    font-size: 13px; font-weight: 600; white-space: nowrap;
+    border-bottom: 1px solid var(--grid);
+  }
+  .cell-ok   { background: var(--ok-bg);   color: var(--ok-ink);   font-weight: 600; }
+  .cell-warn { background: var(--warn-bg); color: var(--warn-ink); font-weight: 600; }
+  .cell-bad  { background: var(--bad-bg);  color: var(--bad-ink);  font-weight: 600; }
+  .cell-crit { background: var(--crit-bg); color: var(--crit-ink); font-weight: 700; }
+  .sev-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 12px 0 4px; font-size: 12.5px; }
+  .sev-legend .key { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-2); }
+  .sev-legend .box { width: 22px; height: 13px; border-radius: 3px; border: 1px solid var(--border); flex: none; }
+
+  .band { background: var(--note-bg); border: 1px solid var(--border); border-radius: 10px; padding: 4px 20px 18px; margin: 24px 0; }
+  .band h3 { margin-top: 20px; }
+
+  /* experiment cards */
+  .exp-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); margin: 18px 0 6px; }
+  .exp {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 9px;
+    padding: 13px 15px 14px; display: flex; flex-direction: column; gap: 7px;
+  }
+  .exp-head { display: flex; align-items: baseline; gap: 9px; }
+  .exp-id {
+    font-family: ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 700;
+    color: var(--accent); flex: none; padding-top: 1px;
+  }
+  .exp-title { font-size: 14.5px; font-weight: 650; line-height: 1.35; margin: 0; }
+  .exp p { font-size: 13.2px; color: var(--ink-2); margin: 0; line-height: 1.52; max-width: none; }
+  .exp p em { color: var(--ink); font-style: normal; font-weight: 600; }
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+  .badge {
+    font-size: 11.5px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--ink-2); white-space: nowrap;
+  }
+  .badge.infer { background: var(--ok-bg); color: var(--ok-ink); border-color: transparent; font-weight: 600; }
+  .badge.train { background: var(--warn-bg); color: var(--warn-ink); border-color: transparent; font-weight: 600; }
+  .badge.gap { background: var(--callout-bg); }
+  .badge.pick { background: var(--crit-bg); color: var(--crit-ink); border-color: transparent; font-weight: 600; }
+
+  ol.steps { list-style: none; padding: 0; margin: 18px 0; counter-reset: step; max-width: 800px; }
+  ol.steps li {
+    counter-increment: step; position: relative; padding-left: 40px; margin: 0 0 13px;
+    font-size: 14.2px; max-width: 74ch;
+  }
+  ol.steps li::before {
+    content: counter(step); position: absolute; left: 0; top: 0;
+    width: 25px; height: 25px; border-radius: 50%; background: var(--surface);
+    border: 1px solid var(--baseline); color: var(--ink-2);
+    font-size: 12px; font-weight: 650; display: flex; align-items: center; justify-content: center;
+    font-variant-numeric: tabular-nums;
+  }
+  ol.steps li b { color: var(--ink); }
+
+  footer.report-foot {
+    margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--border);
+    font-size: 13px; color: var(--muted); max-width: 780px;
+  }
+  footer.report-foot p { margin: 0 0 6px; max-width: 74ch; }
+
+  @media (max-width: 640px) {
+    h1 { font-size: 26px; }
+    .tile .value { font-size: 25px; }
+    header.report-head { padding-top: 36px; }
+    .band { padding: 4px 14px 16px; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    nav.toc a, .chip { transition: color 120ms ease, border-color 120ms ease; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="report-head">
+  <p class="eyebrow">Instrument &amp; calibration report · Project 6 · vMF-sampling</p>
+  <h1>Measuring representation geometry: nulls, feasibility, and an estimator that refuses</h1>
+  <p class="subtitle">
+    <code>vmf-measure</code> v0.1.0: matched null quantiles, the closed-form admissibility
+    surface that retires the rectangular rule, a log-Bessel path valid at p ≥ 8192, and a
+    refusal mode that returns “not resolvable at this n” instead of a number.
+  </p>
+  <div class="meta-chips">
+    <span class="chip">Schema &amp; API <b>frozen · v0.1.0</b></span>
+    <span class="chip">Owner <b>A. Plesner</b></span>
+    <span class="chip">Pre-registration <b>2f146ef</b></span>
+    <span class="chip">Apple <b>M3 Max</b> CPU, float64</span>
+    <span class="chip">Updated <b>2026-08-10</b></span>
+  </div>
+</header>
+
+<div class="tiles">
+  <div class="tile">
+    <p class="label">API &amp; table schema</p>
+    <p class="value">frozen</p>
+    <p class="note"><code>SCHEMA.md</code> pins signatures, enums, CSV columns, and the refusal string. Projects 1 and 5 pin the schema, not the numbers.</p>
+  </div>
+  <div class="tile">
+    <p class="label">Surface vs Monte Carlo</p>
+    <p class="value">0.45–1.11</p>
+    <p class="note">emp/pred ratio across the 60-cell grid; acceptance target was a factor of 2. The closed form is exact in resolvable cells and conservative only deep in the refusal region.</p>
+  </div>
+  <div class="tile">
+    <p class="label">Spurious κ̂ ratio, identical true κ</p>
+    <p class="value">2.10×</p>
+    <p class="note">n_A=70 vs n_B=700 at κ/p=0.05. Rises to 3.20× near the uniform null; bounded by √(n_B/n_A).</p>
+  </div>
+  <div class="tile">
+    <p class="label">log-Bessel at p = 8192–32768</p>
+    <p class="value">2e-16</p>
+    <p class="note">Relative error against a 50-digit mpmath reference at orders 4095–16383, where SciPy's <code>ive</code> returns exactly 0.</p>
+  </div>
+</div>
+
+<nav class="toc" aria-label="Contents">
+  <ol>
+    <li><span class="n">1</span><a href="#status">Status</a></li>
+    <li><span class="n">2</span><a href="#tool">The tool</a></li>
+    <li><span class="n">3</span><a href="#bessel">Log-Bessel at p ≥ 8192</a></li>
+    <li><span class="n">4</span><a href="#surface">D1: surface validation</a></li>
+    <li><span class="n">5</span><a href="#audit">Audit: unequal n, low κ/p</a></li>
+    <li><span class="n">6</span><a href="#nulls">Nulls</a></li>
+    <li><span class="n">7</span><a href="#card">Measurement card (D4)</a></li>
+    <li><span class="n">8</span><a href="#scope">Scope &amp; caveats</a></li>
+    <li><span class="n">9</span><a href="#changelog">Changelog</a></li>
+  </ol>
+</nav>
+
+<hr class="rule">
+
+<section id="status">
+  <h2><span class="sec-n">1</span>Status</h2>
+  <div class="prose">
+    <ul>
+      <li><strong>Shipped (week-1 dependency):</strong> <code>vmf-measure</code> v0.1.0 — null quantiles, admissibility calculator, p ≥ 8192 log-Bessel, refusal mode. API and CSV schema frozen in <code>projects/kappa-measure/SCHEMA.md</code>; owner A. Plesner. Projects 1 and 5 can build against it now.</li>
+      <li><strong>Validated:</strong> the D1 closed-form rel-RMSE surface against Monte Carlo on a 60-cell grid — every cell within a factor of 2 (section 4). The surface replaces the rectangular rule, which falsely rejects the best-conditioned cells in the program.</li>
+      <li><strong>Audit scoped and pre-registered</strong> (commit <code>2f146ef</code>): only comparisons at unequal n and low κ/p. The artifact is real and large (section 5). One numerical correction to the brief, recorded there.</li>
+      <li><strong>Not done:</strong> D3 nulls for Ethayarajh anisotropy / IsoScore / effective rank / participation ratio (the PR and effective-rank closed forms are textbook MP — budgeted ~5 core-hours); D5 upstream SciPy report; the 12–20-claim reproduction subset on original checkpoints.</li>
+      <li><strong>Blocked:</strong> nothing.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="tool">
+  <h2><span class="sec-n">2</span>The tool</h2>
+  <div class="prose">
+    <pre class="code-block"><code>from vmf_measure import kappa_hat, rel_rmse_surface, null_quantile, min_resolvable_n
+
+est = kappa_hat(r_bar=0.05, p=512, n=70)
+est.status   # "not resolvable at this n"
+est.kappa    # None — no number ships below the boundary
+est.rel_rmse # 2.87 — predicted, so callers see how far below they are
+
+min_resolvable_n(0.05, 512)          # ~1.3e4 samples needed for 1% rel-RMSE
+null_quantile("kappa_hat", 512, 70, 0.95)  # matched uniform null</code></pre>
+    <p>
+      Refusal is the default and the refusal string is part of the frozen schema. Passing
+      <code>n=None</code> opts out of the check explicitly; <code>refuse=False</code> returns the
+      number with the predicted error attached. The rectangular rule
+      (<code>R̄ &gt; 0.19 AND n/p ≥ 10</code>) is retired everywhere in the program: it denies
+      p=512, R̄=0.85, n/p=0.5, where the measured relative RMSE is
+      <strong>0.64%</strong> — one of the best-conditioned cells
+      we have.
+    </p>
+  </div>
+</section>
+
+<section id="bessel">
+  <h2><span class="sec-n">3</span>Log-Bessel at p ≥ 8192</h2>
+  <div class="prose">
+    <p>
+      SciPy's <code>special.ive</code> underflows to exactly zero above order ≈511, which makes
+      even the <em>admissibility formula</em> uncomputable in stock SciPy at p = 4096
+      (<code>ive(2047, κ)</code> is NaN for κ ≲ 2048). <code>vmf_measure.log_iv</code> is a NumPy
+      translation of the CUSF piecewise algorithm already tested in this repo
+      (<code>src/torch_log_iv.py</code>), checked here against a 50-digit mpmath reference:
+    </p>
+    <div class="table-scroll"><table class="data-table">
+      <thead><tr><th>order ν (p = 2ν+2)</th><th>κ</th><th>rel. error vs mpmath</th><th>SciPy <code>ive</code></th></tr></thead>
+      <tbody>
+        <tr><td class="rowhead">511 (p=1024)</td><td class="num">512</td><td class="num">≤1e-15</td><td class="cell-warn">underflow begins</td></tr>
+        <tr><td class="rowhead">2047 (p=4096)</td><td class="num">2048</td><td class="num">2.1e-16</td><td class="cell-crit">NaN</td></tr>
+        <tr><td class="rowhead">4095 (p=8192)</td><td class="num">100 – 10000</td><td class="num">≤2.1e-16</td><td class="cell-crit">0 / NaN</td></tr>
+        <tr><td class="rowhead">8191 (p=16384)</td><td class="num">8500</td><td class="num">1.9e-16</td><td class="cell-crit">0 / NaN</td></tr>
+        <tr><td class="rowhead">16383 (p=32768)</td><td class="num">20000</td><td class="num">≤1e-15</td><td class="cell-crit">0 / NaN</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section id="surface">
+  <h2><span class="sec-n">4</span>D1: closed-form surface vs Monte Carlo</h2>
+  <div class="prose">
+    <div class="equation">rel-RMSE(κ̂) ≈ hypot( amp·(1−R²)/(2nR²),  1/(κ√(n·A_p′(κ))) )
+amp = 1 + 2R²/(1−R²) − 2R²/(p−R²)</div>
+    <p>
+      Each cell draws up to 2000 independent vMF datasets (Householder NumPy sampler,
+      PCG64DXSM) and compares the empirical relative RMSE of the joint-MLE κ̂ against the
+      surface evaluated at the population R̄ = A_p(κ). Range of emp/pred across p ∈
+      {128, 512, 2048} per (κ/p, n/p) band; the pre-registered acceptance target was a
+      factor of 2.
+    </p>
+    <div class="table-scroll"><table class="data-table">
+      <thead><tr><th>κ/p</th><th>n/p</th><th>emp/pred range over p</th></tr></thead>
+      <tbody>
+<tr><td class="rowhead">κ/p = 0.05</td><td class="rowhead">n/p = 0.25</td><td class="num cell-warn">0.445 – 0.860</td></tr>
+<tr><td class="rowhead">κ/p = 0.05</td><td class="rowhead">n/p = 0.5</td><td class="num cell-ok">0.552 – 0.918</td></tr>
+<tr><td class="rowhead">κ/p = 0.05</td><td class="rowhead">n/p = 2</td><td class="num cell-ok">0.774 – 0.979</td></tr>
+<tr><td class="rowhead">κ/p = 0.05</td><td class="rowhead">n/p = 8</td><td class="num cell-ok">0.923 – 0.993</td></tr>
+<tr><td class="rowhead">κ/p = 0.2</td><td class="rowhead">n/p = 0.25</td><td class="num cell-ok">0.892 – 0.989</td></tr>
+<tr><td class="rowhead">κ/p = 0.2</td><td class="rowhead">n/p = 0.5</td><td class="num cell-ok">0.929 – 0.996</td></tr>
+<tr><td class="rowhead">κ/p = 0.2</td><td class="rowhead">n/p = 2</td><td class="num cell-ok">0.968 – 0.997</td></tr>
+<tr><td class="rowhead">κ/p = 0.2</td><td class="rowhead">n/p = 8</td><td class="num cell-ok">0.981 – 1.115</td></tr>
+<tr><td class="rowhead">κ/p = 0.5</td><td class="rowhead">n/p = 0.25</td><td class="num cell-ok">1.000 – 1.020</td></tr>
+<tr><td class="rowhead">κ/p = 0.5</td><td class="rowhead">n/p = 0.5</td><td class="num cell-ok">0.992 – 1.024</td></tr>
+<tr><td class="rowhead">κ/p = 0.5</td><td class="rowhead">n/p = 2</td><td class="num cell-ok">1.000 – 1.008</td></tr>
+<tr><td class="rowhead">κ/p = 0.5</td><td class="rowhead">n/p = 8</td><td class="num cell-ok">0.973 – 1.029</td></tr>
+<tr><td class="rowhead">κ/p = 1</td><td class="rowhead">n/p = 0.25</td><td class="num cell-ok">1.009 – 1.036</td></tr>
+<tr><td class="rowhead">κ/p = 1</td><td class="rowhead">n/p = 0.5</td><td class="num cell-ok">1.007 – 1.021</td></tr>
+<tr><td class="rowhead">κ/p = 1</td><td class="rowhead">n/p = 2</td><td class="num cell-ok">0.991 – 1.020</td></tr>
+<tr><td class="rowhead">κ/p = 1</td><td class="rowhead">n/p = 8</td><td class="num cell-ok">0.930 – 0.991</td></tr>
+<tr><td class="rowhead">κ/p = 3</td><td class="rowhead">n/p = 0.25</td><td class="num cell-ok">0.997 – 1.026</td></tr>
+<tr><td class="rowhead">κ/p = 3</td><td class="rowhead">n/p = 0.5</td><td class="num cell-ok">1.015 – 1.049</td></tr>
+<tr><td class="rowhead">κ/p = 3</td><td class="rowhead">n/p = 2</td><td class="num cell-ok">1.013 – 1.050</td></tr>
+<tr><td class="rowhead">κ/p = 3</td><td class="rowhead">n/p = 8</td><td class="num cell-ok">0.987 – 1.020</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout">
+      <strong>Calibration cell confirmed.</strong> p=512, κ/p=3.0 (R̄=0.85), n/p=0.5:
+      empirical <strong>0.64%</strong> vs predicted
+      0.63% — the brief's quoted 0.63%. The rectangular rule
+      would refuse this cell at less than half the samples it demands.
+    </div>
+    <div class="callout warn">
+      <strong>Where the surface misses, it misses safe.</strong> The sub-2× cells are all at
+      κ/p ≤ 0.2, deep inside the refusal region: the κ̂ distribution saturates, so the surface
+      <em>over</em>estimates the error (emp/pred down to 0.45). The refusal
+      decision is unchanged there — both numbers are far above any target — but dependent
+      projects should not read predicted rel-RMSE &gt; 1 as a quantitative error estimate.
+    </div>
+  </div>
+</section>
+
+<section id="audit">
+  <h2><span class="sec-n">5</span>Audit: comparisons at unequal n and low κ/p</h2>
+  <div class="prose">
+    <p>
+      The census framing is not run — the yield model in the brief gives 0–2 consequential
+      findings, for three structural reasons: a common upward bias makes ordinal comparisons
+      at matched n <em>conservative</em>; infeasibility lives at κ/p ≤ 0.2, where an upward
+      bias makes "near-isotropic" conclusions conservative too; and the flagship target
+      already ships a matched null. The surviving attack surface is a comparison at
+      <strong>unequal n</strong> in the low-κ/p regime — rare vs frequent tokens, small vs
+      large classes. Verdicts are pre-registered (SCHEMA.md, commit
+      <code>2f146ef</code>) and phrased “not resolvable as reported at the
+      original n”, never “wrong”.
+    </p>
+    <div class="table-scroll"><table class="data-table">
+      <thead><tr><th>claim</th><th>κ/p</th><th>n_A / n_B</th><th>true ratio</th><th>observed κ̂ ratio</th><th>verdict</th></tr></thead>
+      <tbody>
+<tr><td class="rowhead">canonical-unequal-n</td><td class="num">0.05</td><td class="num">70 / 700</td><td class="num">1.00</td><td class="num"><b>2.096</b></td><td class="cell-warn">not resolvable as reported at the original n</td></tr>
+<tr><td class="rowhead">control-matched-n</td><td class="num">0.05</td><td class="num">700 / 700</td><td class="num">1.00</td><td class="num"><b>1.000</b></td><td class="cell-warn">not resolvable as reported at the original n</td></tr>
+<tr><td class="rowhead">control-true-ratio-2</td><td class="num">1</td><td class="num">1000 / 1000</td><td class="num">2.00</td><td class="num"><b>1.999</b></td><td class="cell-ok">resolvable</td></tr>
+<tr><td class="rowhead">brief-illustration-n100</td><td class="num">0.05</td><td class="num">100 / 100</td><td class="num">2.00</td><td class="num"><b>1.267</b></td><td class="cell-warn">not resolvable as reported at the original n</td></tr>
+<tr><td class="rowhead">sweep-kop-0.001</td><td class="num">0.001</td><td class="num">70 / 700</td><td class="num">1.00</td><td class="num"><b>3.202</b></td><td class="cell-warn">not resolvable as reported at the original n</td></tr>
+<tr><td class="rowhead">sweep-kop-0.005</td><td class="num">0.005</td><td class="num">70 / 700</td><td class="num">1.00</td><td class="num"><b>3.182</b></td><td class="cell-warn">not resolvable as reported at the original n</td></tr>
+<tr><td class="rowhead">sweep-kop-0.013</td><td class="num">0.013</td><td class="num">70 / 700</td><td class="num">1.00</td><td class="num"><b>3.049</b></td><td class="cell-warn">not resolvable as reported at the original n</td></tr>
+<tr><td class="rowhead">sweep-kop-0.02</td><td class="num">0.02</td><td class="num">70 / 700</td><td class="num">1.00</td><td class="num"><b>2.875</b></td><td class="cell-warn">not resolvable as reported at the original n</td></tr>
+<tr><td class="rowhead">sweep-kop-0.05</td><td class="num">0.05</td><td class="num">70 / 700</td><td class="num">1.00</td><td class="num"><b>2.097</b></td><td class="cell-warn">not resolvable as reported at the original n</td></tr>
+<tr><td class="rowhead">sweep-kop-0.1</td><td class="num">0.1</td><td class="num">70 / 700</td><td class="num">1.00</td><td class="num"><b>1.480</b></td><td class="cell-warn">not resolvable as reported at the original n</td></tr>
+<tr><td class="rowhead">sweep-kop-0.2</td><td class="num">0.2</td><td class="num">70 / 700</td><td class="num">1.00</td><td class="num"><b>1.165</b></td><td class="cell-warn">not resolvable as reported at the original n</td></tr>
+      </tbody>
+    </table></div>
+    <p><svg width="640" height="300" viewBox="0 0 640 300" role="img" aria-label="spurious κ̂ ratio, n_A=70 vs n_B=700 vs κ/p (log scale)"><line x1="64" y1="258.0" x2="620" y2="258.0" stroke="var(--baseline)"/><line x1="64" y1="18" x2="64" y2="258.0" stroke="var(--baseline)"/><text x="64.0" y="274.0" font-size="10.5" fill="var(--muted)" text-anchor="middle">0.001</text><text x="232.9" y="274.0" font-size="10.5" fill="var(--muted)" text-anchor="middle">0.005</text><text x="333.2" y="274.0" font-size="10.5" fill="var(--muted)" text-anchor="middle">0.013</text><text x="378.4" y="274.0" font-size="10.5" fill="var(--muted)" text-anchor="middle">0.02</text><text x="474.5" y="274.0" font-size="10.5" fill="var(--muted)" text-anchor="middle">0.05</text><text x="547.3" y="274.0" font-size="10.5" fill="var(--muted)" text-anchor="middle">0.1</text><text x="620.0" y="274.0" font-size="10.5" fill="var(--muted)" text-anchor="middle">0.2</text><text x="56" y="261.5" font-size="10.5" fill="var(--muted)" text-anchor="end">0</text><line x1="64" y1="258.0" x2="620" y2="258.0" stroke="var(--grid)" stroke-width="0.7"/><text x="56" y="192.1" font-size="10.5" fill="var(--muted)" text-anchor="end">1</text><line x1="64" y1="188.6" x2="620" y2="188.6" stroke="var(--grid)" stroke-width="0.7"/><text x="56" y="122.7" font-size="10.5" fill="var(--muted)" text-anchor="end">2</text><line x1="64" y1="119.2" x2="620" y2="119.2" stroke="var(--grid)" stroke-width="0.7"/><text x="56" y="53.3" font-size="10.5" fill="var(--muted)" text-anchor="end">3</text><line x1="64" y1="49.8" x2="620" y2="49.8" stroke="var(--grid)" stroke-width="0.7"/><line x1="64" y1="38.6" x2="620" y2="38.6" stroke="var(--s2)" stroke-dasharray="5 4" stroke-width="1.4"/><text x="616" y="33.6" font-size="10.5" fill="var(--s2)" text-anchor="end">√(n_B/n_A) = 3.16</text><polyline points="64.0,35.8 232.9,37.2 333.2,46.4 378.4,58.5 474.5,112.5 547.3,155.3 620.0,177.2" fill="none" stroke="var(--accent)" stroke-width="2"/><circle cx="64.0" cy="35.8" r="3" fill="var(--accent)"/><circle cx="232.9" cy="37.2" r="3" fill="var(--accent)"/><circle cx="333.2" cy="46.4" r="3" fill="var(--accent)"/><circle cx="378.4" cy="58.5" r="3" fill="var(--accent)"/><circle cx="474.5" cy="112.5" r="3" fill="var(--accent)"/><circle cx="547.3" cy="155.3" r="3" fill="var(--accent)"/><circle cx="620.0" cy="177.2" r="3" fill="var(--accent)"/><text x="342.0" y="294" font-size="11.5" fill="var(--ink-2)" text-anchor="middle">κ/p (log scale)</text><text x="14" y="138.0" font-size="11.5" fill="var(--ink-2)" text-anchor="middle" transform="rotate(-90 14 138.0)">spurious κ̂ ratio, n_A=70 vs n_B=700</text></svg></p>
+    <div class="callout crit">
+      <strong>Correction to the brief.</strong> The quoted spurious ratio of 3.01 at κ/p = 0.05,
+      n_A=70 vs n_B=700 does not reproduce: the measured value is
+      <strong>2.10</strong>, stable across p ∈ {64, 512, 2048} and
+      across estimators (MLE and Banerjee agree to 3 s.f. in this regime). The artifact's
+      magnitude is bounded by √(n_B/n_A) = √10 ≈ 3.16, approached only at the uniform null;
+      3.01 is reached near κ/p ≈ 0.017, not 0.05. The structural conclusion — this is the one
+      surviving attack surface — stands.
+    </div>
+    <div class="callout">
+      <strong>The matched-n controls survive, as predicted.</strong> Identical true κ at equal
+      n gives ratio 1.000; a true ratio of 2.0 in a resolvable cell
+      reads 1.999; and the brief's own illustration — true ratio 2.0,
+      both arms at n=100, low κ/p — reads <strong>1.267</strong>,
+      exactly the predicted 1.267: the bias shrinks gaps, it does not inflate them. Note the
+      matched-n low-κ/p control is <em>individually</em> refused (each arm's absolute κ̂ is
+      meaningless) while its ratio is exactly 1 — refusal guards absolute claims; ordinal
+      claims at matched n were never at risk.
+    </div>
+  </div>
+</section>
+
+<section id="nulls">
+  <h2><span class="sec-n">6</span>Nulls</h2>
+  <div class="prose">
+    <p>
+      Three matched nulls, definitions frozen in SCHEMA.md: <strong>uniform</strong>
+      (closed-form: R̄² ~ χ²_p/(np), exact E[R̄²]=1/n), <strong>mean_removed</strong>
+      (sample-mean direction projected out, renormalized), and
+      <strong>covariance_matched</strong> (Gaussian with the data's empirical covariance,
+      normalized to the sphere). Full grid in <code>results/null_quantiles.csv</code>
+      (688 rows).
+    </p>
+    <div class="callout">
+      <strong>The mean-removed null is near-degenerate — a finding, not a bug.</strong>
+      Projecting out the sample-mean direction makes the un-normalized resultant vanish
+      <em>exactly</em> (Σy_i = 0 by construction), so the renormalized R̄ null is second-order:
+      q95 = 0.0008 against 0.1256 for the uniform null at p=512, n=70 — a
+      163× gap. Any pipeline that mean-centers before normalizing lives on
+      this null, and judging it against √(1/n) would manufacture concentration out of thin air.
+    </div>
+    <p>
+      Pending (D3): Ethayarajh anisotropy, IsoScore, effective rank, participation ratio on the
+      same grid. For isotropic data, PR = p/(1 + p/n) reproduces simulation to three decimals —
+      textbook Marchenko–Pastur, budgeted ~5 core-hours to confirm and cite, not a contribution.
+    </p>
+  </div>
+</section>
+
+<section id="card">
+  <h2><span class="sec-n">7</span>Geometry measurement card (D4)</h2>
+  <div class="prose">
+    <p>Every geometry claim in the program ships with this card. The canonical audit cell, filled in:</p>
+    <div class="table-scroll"><table class="data-table">
+      <tbody>
+        <tr><th>instrument</th><td>κ̂, joint vMF MLE (vmf-measure 0.1.0)</td></tr>
+        <tr><th>n, p</th><td class="num">n = 70, p = 512</td></tr>
+        <tr><th>null model</th><td>uniform on S⁵¹¹ (matched); q95(κ̂) available in null_quantiles.csv</td></tr>
+        <tr><th>observed</th><td class="num">R̄ ≈ 0.1294, κ̂ ≈ 67.4 (true κ = 25.6)</td></tr>
+        <tr><th>predicted rel-RMSE</th><td class="num">0.44 (target 0.01)</td></tr>
+        <tr><th>admissible</th><td class="cell-crit">no — “not resolvable at this n”</td></tr>
+        <tr><th>verdict</th><td>not resolvable as reported at the original n</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section id="scope">
+  <h2><span class="sec-n">8</span>Scope &amp; caveats</h2>
+  <div class="prose">
+    <ul>
+      <li><strong>CPU-only, float64, single machine</strong> (Apple M3 Max) for every number on this page. Monte Carlo cells use one seed each with 60–2000 replicates; precision comes from replication against a deterministic formula, not from seed sweeps.</li>
+      <li><strong>The census was not run, deliberately.</strong> The yield model retains 0–2 consequential findings from 60–120 harvested claims; section 5 covers the one attack surface that survives the three structural filters.</li>
+      <li><strong>Refusal ≠ ordinal safety.</strong> vmf-measure refuses per-arm, on absolute error. An ordinal comparison at matched n can be valid where both arms refuse; the tool does not adjudicate ordinal claims.</li>
+      <li><strong>Audit verdicts are simulation-based.</strong> The 12–20-claim reproduction subset on original checkpoints is pending; substituting checkpoints would make it a different experiment.</li>
+      <li><strong>D5 is pending.</strong> The SciPy <code>ive</code> underflow (exact 0 above order ≈511; NaN for <code>ive(2047, κ)</code>, κ ≲ 2048) still needs its upstream report and the log-Bessel contribution.</li>
+      <li><strong>Numbers may move.</strong> Dependents pin the schema, not the values; null quantiles will tighten as MC reps grow.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="changelog">
+  <h2><span class="sec-n">9</span>Changelog</h2>
+  <div class="prose">
+    <ul>
+      <li><strong>2026-08-10</strong> — v0.1.0 shipped: frozen API/schema (<code>SCHEMA.md</code>), log-Bessel validated to p=32768 against mpmath-50dps, surface validated on a 60-cell MC grid, audit run on pre-registered verdicts (commit <code>2f146ef</code>). One correction to the brief recorded (§5). Report HEAD <code>8fce5e7</code>.</li>
+    </ul>
+  </div>
+</section>
+
+<footer class="report-foot">
+  <p><strong>Reproduce:</strong> <code>uv run python projects/kappa-measure/scripts/validate_surface.py</code>, <code>audit_unequal_n.py</code>, <code>make_null_quantiles.py</code>, then <code>make_report.py</code>. Tests: <code>cd projects/kappa-measure/tests &amp;&amp; uv run python -m unittest discover -s . -v</code>.</p>
+  <p><strong>Raw data:</strong> <code>projects/kappa-measure/results/*.csv</code> (frozen schemas). API contract: <code>projects/kappa-measure/SCHEMA.md</code>.</p>
+</footer>
+</div>
+</body>
+</html>

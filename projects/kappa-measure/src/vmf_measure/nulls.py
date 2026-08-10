@@ -90,18 +90,6 @@ def _mean_removed_draws(
     return residual / np.maximum(residual_norm, np.finfo(np.float64).tiny)
 
 
-def _covariance_matched_draws(
-    rng: np.random.Generator, samples: NDArray[np.float64], reps: int
-) -> NDArray[np.float64]:
-    n, p = samples.shape
-    covariance = np.cov(samples, rowvar=False)
-    # SPD guard: jitter by a fraction of the mean variance.
-    covariance += 1e-12 * (np.trace(covariance) / p) * np.eye(p)
-    chol = np.linalg.cholesky(covariance)
-    draws = rng.standard_normal((reps, n, p)) @ chol.T
-    draws /= np.linalg.norm(draws, axis=-1, keepdims=True)
-    return draws
-
 
 def null_quantile(
     statistic: str,
@@ -146,20 +134,34 @@ def null_quantile(
             "mean_removed and covariance_matched support r_bar and kappa_hat"
         )
 
-    rng = np.random.Generator(np.random.PCG64DXSM(seed))
-    if null == "mean_removed":
-        draws = _mean_removed_draws(rng, reps, n, p)
-    else:
-        if samples is None:
-            raise ValueError("covariance_matched requires the observed samples")
+    if null == "covariance_matched" and samples is None:
+        raise ValueError("covariance_matched requires the observed samples")
+    sample_arr = None
+    if null == "covariance_matched":
         sample_arr = np.asarray(samples, dtype=np.float64)
         if sample_arr.shape != (n, p):
             raise ValueError(
                 f"samples must have shape (n, p) = {(n, p)}, got {sample_arr.shape}"
             )
-        draws = _covariance_matched_draws(rng, sample_arr, reps)
+        # Precompute the Cholesky factor once for all chunks.
+        covariance = np.cov(sample_arr, rowvar=False)
+        covariance += 1e-12 * (np.trace(covariance) / p) * np.eye(p)
+        chol = np.linalg.cholesky(covariance)
 
-    values = _statistic_from_samples(statistic, draws, p)
+    rng = np.random.Generator(np.random.PCG64DXSM(seed))
+    chunk = max(1, int(2e8 / (n * p)))
+    values = np.empty(reps)
+    done = 0
+    while done < reps:
+        take = min(chunk, reps - done)
+        if null == "mean_removed":
+            draws = _mean_removed_draws(rng, take, n, p)
+        else:
+            draws = rng.standard_normal((take, n, p)) @ chol.T
+            draws /= np.linalg.norm(draws, axis=-1, keepdims=True)
+        values[done : done + take] = _statistic_from_samples(statistic, draws, p)
+        done += take
+
     value = float(np.quantile(values, q))
     return NullQuantile(statistic, null, p, n, q, value, "monte_carlo", reps, seed)
 
