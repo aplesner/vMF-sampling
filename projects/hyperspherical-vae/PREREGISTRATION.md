@@ -86,6 +86,12 @@ Pre-registration commit: `c55a906`.
   gap of 1 nat at d ≥ 256 against the pooled within-seed s.d. (to be measured
   in the pilot); if the pilot s.d. makes 1 nat undetectable, the estimand
   switches to the ordinal claim (rank order across arms at matched d).
+  LR protocol (fitting the 25 GPU-h budget): pilot sweep LR ∈ {3e-4, 1e-3,
+  3e-3} × 1 seed at anchor dims d ∈ {20, 128, 1024} per arm; each final
+  (arm, d) cell uses the best LR of the nearest anchor in log-d. No cell is
+  ever compared at a shared LR. T1 anchors (d ≤ 40, gaussian/vmf) run at
+  Davidson's exact settings (lr 1e-3, batch 64, warmup 100) and are analyzed
+  against Table 1 within 2 s.d.
 - **T3.** Primary contrast: nViT-VAE (vMF) minus arm-4 control (conventional
   ViT + vMF + √d rescale), CIFAR-10, d ∈ {64, 256, 1024}, 3 seeds. If arm 4
   closes the gap (difference within 2 s.e. of zero), the result is reported as

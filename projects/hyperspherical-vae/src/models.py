@@ -24,7 +24,7 @@ import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from vmf_kl import log_surface_area, log_vmf_log_norm  # noqa: E402
-from vmf_vae import kl_to_uniform, sample_vmf  # noqa: E402
+from vmf_vae import sample_vmf, sample_vmf_with_kl  # noqa: E402
 
 
 def _log_surface(m: int) -> float:
@@ -212,8 +212,7 @@ class SphericalVAE(_SphericalBase):
 
     def encode_latent(self, h):
         mu, kappa = self._posterior(h)
-        z, correction = sample_vmf(mu, kappa)
-        kl = kl_to_uniform(kappa, self.m)
+        z, correction, kl = sample_vmf_with_kl(mu, kappa)
         aux = {
             "correction": correction,
             "metrics": {"mean_kappa": kappa.detach().mean().item()},

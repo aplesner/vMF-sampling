@@ -92,7 +92,8 @@ class _BesselEvalFn(torch.autograd.Function):
     @staticmethod
     def backward(ctx, gout):
         d_kl, d_logc = ctx.saved_tensors
-        g = gout.detach().to(d_kl.device, d_kl.dtype)
+        # round-trip through CPU: MPS cannot cast to float64 on-device
+        g = gout.detach().cpu().to(d_kl.device, d_kl.dtype)
         grad = g[0] * d_kl + g[1] * d_logc  # A output is detached (no g[2] path)
         return grad.to(gout.device, gout.dtype), None
 

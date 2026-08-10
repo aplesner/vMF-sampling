@@ -31,7 +31,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from vmf_vae import kl_to_uniform, sample_vmf  # noqa: E402
+from vmf_vae import sample_vmf, sample_vmf_with_kl  # noqa: E402
 
 
 def _norm(x: torch.Tensor, dim: int = -1) -> torch.Tensor:
@@ -312,8 +312,7 @@ class ViTVAE(nn.Module):
             kl = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp()).sum(-1)
             return z, kl, {"mean_kappa": float("nan"), "mu": mu}
         mu, kappa = self._posterior(feats)
-        z, correction = sample_vmf(mu, kappa)
-        kl = kl_to_uniform(kappa, self.m)
+        z, correction, kl = sample_vmf_with_kl(mu, kappa)
         return z, kl, {"correction": correction, "mean_kappa": kappa.detach().mean().item(),
                        "mu": mu, "kappa": kappa}
 
