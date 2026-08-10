@@ -174,6 +174,11 @@ def train_vae(
             log_fh.write(json.dumps(record) + "\n")
             log_fh.flush()
 
+        # Early stopping must not engage during KL warm-up: the val loss
+        # rises with beta, so a best-set-during-warmup would fire patience
+        # before beta reaches 1.  Track/stop only once warm-up completes.
+        if epoch + 1 < warmup_epochs:
+            continue
         score = val["loss"]
         if score < best_val - 1e-4:
             best_val = score

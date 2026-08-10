@@ -111,6 +111,9 @@ def main() -> None:
                **{f"val_{k}": v for k, v in val.items()}}
         log_fh.write(json.dumps(rec) + "\n")
         log_fh.flush()
+        # no early stopping during KL warm-up (see train.py)
+        if epoch + 1 < args.warmup_epochs:
+            continue
         if val["loss"] < best_val - 1e-4:
             best_val, best_epoch = val["loss"], epoch
             best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
