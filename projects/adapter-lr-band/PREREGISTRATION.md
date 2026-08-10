@@ -2,7 +2,7 @@
 
 Pre-registered before any GPU run. Commit hash recorded below at registration time.
 
-**Registration commit:** _(to be filled by `git rev-parse HEAD` at first cluster submission)_
+**Registration commit:** `3743d4dce8d0949e0f45fbe6b3d3a41ddce7f2c6` (code + this document, before any GPU run)
 
 ## Question
 
