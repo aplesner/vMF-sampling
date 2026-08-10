@@ -7,4 +7,7 @@ __pycache__/
 *.sif
 .ignore_for_code_sync
 *.tar.gz
-wandb/
+wandb/projects/hyperspherical-vae/data/
+projects/hyperspherical-vae/results/t2_logs/
+projects/hyperspherical-vae/results/t3_logs/
+projects/hyperspherical-vae/results/t2_pilot_logs/

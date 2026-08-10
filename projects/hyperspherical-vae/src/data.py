@@ -54,7 +54,16 @@ def get_omniglot(root: Path | None = None, dynamic: bool = True):
     return train, test
 
 
+def get_cifar10(root: Path | None = None):
+    root = root or DATA_ROOT
+    tf = transforms.ToTensor()
+    train = datasets.CIFAR10(root, train=True, download=True, transform=tf)
+    test = datasets.CIFAR10(root, train=False, download=True, transform=tf)
+    return train, test
+
+
 DATASETS = {
     "mnist": (get_mnist, 784),
     "omniglot": (get_omniglot, 784),
+    "cifar10": (get_cifar10, 3072),
 }
