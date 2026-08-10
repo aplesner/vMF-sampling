@@ -47,6 +47,12 @@ def build_grid(tier, args):
             for lr in LR_GRID[arm]:
                 for wd in WD_GRID:
                     runs.append(dict(arm=arm, opt_name="adamw", lr=lr, wd=wd))
+    elif tier == "mlp-lowlr":
+        # ELR control: does the plain MLP show the nMLP's slow-decay
+        # transient once its steps are small enough?
+        for lr in (1e-6, 3e-6):
+            for wd in (0.0, 1e-3):
+                runs.append(dict(arm="mlp", opt_name="adamw", lr=lr, wd=wd))
     elif tier == "wd-dose":
         for wd in [float(x) for x in args.wd_points.split(",")]:
             runs.append(dict(arm="mlp", opt_name="adamw", lr=args.lr, wd=wd))

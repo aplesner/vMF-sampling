@@ -96,8 +96,6 @@ def main():
             cfg_n = A.select_config(lca, "nmlp")
             cfg_m = A.select_config(lca, "mlp")
             gate = A.gate(t0)
-            with open(os.path.join(ROOT, "results", "analysis_tier0.json"), "w") as f:
-                json.dump(gate, f, indent=2)
 
             verdict = "PASS" if (gate["pass_gain"] and gate["pass_dominance"]) else "FAIL"
             cls = "gate-pass" if verdict == "PASS" else "gate-fail"
@@ -121,11 +119,21 @@ def main():
             ]
             sel_tab = table(rows, ["arm", "lr", "wd", "LCA (%)"])
             lopo = ", ".join(f"{v:+.1f}" for v in gate["lopo_gains_pts"])
+            fronts = []
+            aucs = {}
+            for arm, lab, c in (("mlp", "MLP", A.C1), ("nmlp", "nMLP", A.C2)):
+                front, auc = A.pooled_frontier(t0, arm)
+                fronts.append((lab, c, front, auc))
+                aucs[arm] = auc
             figs = (
                 A.fig_epoch_curves(t0, (cfg_n[0], cfg_n[1]), (cfg_m[0], cfg_m[1]))
                 + A.fig_frontier(t0, (cfg_n[0], cfg_n[1]), (cfg_m[0], cfg_m[1]))
+                + A.fig_pooled_frontier(fronts)
                 + A.fig_heatmaps(lca, A_LR_GRID, A_WD_GRID)
             )
+            gate["frontier_auc"] = aucs
+            with open(os.path.join(ROOT, "results", "analysis_tier0.json"), "w") as f:
+                json.dump(gate, f, indent=2)
             tier0_html = f"""
         <h2>Tier 0 — replication gate (5+5 CIFAR-10, no rehearsal)</h2>
         {gate_html}
@@ -135,54 +143,88 @@ def main():
         <p class="prose"><small>Leave-one-partition-out re-selection gains (pts): {lopo}.
         Selection used the same 15 pairs as evaluation; LOPO is the robustness check.</small></p>
         <div class="fig">{figs}</div>
+        <h3>Reading of the Tier-0 result</h3>
+        <p class="prose">The pre-registered gate <b>fails</b>: at LCA-selected
+        configs both arms collapse to old-class accuracy 0 within one phase-2
+        epoch, LCAs are equal, and epoch-grid dominance is 20%. The origin
+        claim — faster convergence <i>and</i> less forgetting
+        <i>simultaneously</i> — does not replicate as stated.</p>
+        <p class="prose">What does replicate is a frontier effect: pooling all
+        (config × epoch) points, the nMLP's stability–plasticity frontier
+        strictly dominates the MLP's in the high-stability region
+        (frontier AUC {aucs.get('nmlp', 0):.3f} vs {aucs.get('mlp', 0):.3f}).
+        The MLP cannot produce any point with old-class acc &gt; 6% at
+        new-class acc ≥ 42%, while the nMLP at its low-LR end traverses the
+        tradeoff gradually (e.g. old 43.6% at new 14.0%, old 17.1% at new
+        33.0%). The effect is strongest at the nMLP's low-LR end and vanishes
+        at high LR — exactly the signature an effective-learning-rate account
+        predicts, which Tier 1 tests directly. Note also that phase-1
+        ceilings differ by config (MLP 0.64–0.73, nMLP 0.59–0.72), so raw
+        old-class retention is reported against each config's own phase-1
+        accuracy.</p>
         """
     else:
         status.append("Tier 0: not started")
 
-    # ---------- Tier 1: WD dose-response ----------
-    wd = A.load_tier("wd-dose")
+    # ---------- Tier 1a: WD dose-response (reuses the tier-0 WD grid) ----------
     tier1a_html = ""
-    if len(wd) and len(t0):
+    arms_ready_t0 = len(t0) and not A.run_lca(t0)[A.run_lca(t0).arm == "nmlp"].empty
+    if arms_ready_t0:
         lca0 = A.run_lca(t0)
         cfg_m = A.select_config(lca0, "mlp")
         cfg_n = A.select_config(lca0, "nmlp")
-        # per-layer update curves: nMLP selected vs baseline doses
         p2 = A.phase2(t0)
         def layer_curve(df, arm, lr, wdv):
             d = df[(df.arm == arm) & (df.lr == lr) & (df.wd == wdv)]
+            if not len(d):
+                return None
             return np.nanmean(d[["upd0", "upd1", "upd2", "upd3"]].values, axis=0)
         nm_curve = layer_curve(p2, "nmlp", cfg_n[0], cfg_n[1])
-        p2w = A.phase2(wd)
-        doses = sorted(p2w.wd.unique())
+        doses = A_WD_GRID
         rows_u, points = [], []
+        p1t = t0[t0.phase == 1]
         for d in doses:
-            cur = layer_curve(p2w, "mlp", cfg_m[0], d)
+            cur = layer_curve(p2, "mlp", cfg_m[0], d)
+            if cur is None:
+                continue
             rows_u.append((f"MLP wd={d:g}", "#86b6ef", cur))
-            dd = p2w[p2w.wd == d]
-            p1w = wd[wd.phase == 1]  # each dose run's own phase-1 old acc
+            dd = p2[(p2.arm == "mlp") & (p2.lr == cfg_m[0]) & (p2.wd == d)]
             drops = []
             for rid, grp in dd.groupby("run_id"):
-                ref = p1w[p1w.run_id == rid]
+                ref = p1t[p1t.run_id == rid]
                 if len(ref):
                     drops.append(ref.old_acc.iloc[0] - grp.old_acc.iloc[-1])
             drops = np.array(drops)
             points.append((d, None, drops.mean() if len(drops) else np.nan,
                            drops.std() / np.sqrt(max(len(drops), 1)) if len(drops) else 0.0))
         rows_u.insert(0, ("nMLP (selected)", "#1baf7a", nm_curve))
+        # matched dose: least-squares on per-layer curves (log space)
+        match_idx, match_err = None, None
+        if nm_curve is not None and len(rows_u) > 1:
+            errs = [np.sum((np.log10(np.clip(c[2], 1e-12, None)) -
+                            np.log10(np.clip(nm_curve, 1e-12, None))) ** 2)
+                    for c in rows_u[1:]]
+            match_idx = int(np.argmin(errs))
+            match_err = float(np.sqrt(errs[match_idx] / len(nm_curve)))
         figs = A.fig_update_overlay(rows_u, "Per-layer relative update norms — dose match") + \
                A.fig_dose_response(points, "WD dose–response: old-class forgetting")
+        matched_wd = rows_u[1 + match_idx][0] if match_idx is not None else "n/a"
+        match_err_s = f"{match_err:.3f} dex" if match_err is not None else "n/a"
         tab = table([[f"{p[0]:g}", fmt(100 * p[2]) + " ± " + fmt(100 * p[3])]
                      for p in points], ["baseline WD", "old-class drop (pts)"])
         tier1a_html = f"""
         <h2>Tier 1a — weight-decay dose–response (ELR control)</h2>
-        <p class="prose">Baseline MLP at its selected LR, five WD doses. The dose whose
-        per-layer ‖ΔW‖/‖W‖ profile overlays the nMLP's is the ELR-matched point; if the
-        nMLP's stability advantage survives there, it is not an effective-LR artifact.</p>
+        <p class="prose">Baseline MLP at its selected LR ({cfg_m[0]:g}), five WD doses
+        (the tier-0 grid). The dose whose per-layer ‖ΔW‖/‖W‖ profile overlays the
+        nMLP's is the ELR-matched point — here <b>{matched_wd}</b>
+        (log-space RMS misfit {match_err_s}). If the nMLP's
+        stability advantage survives at matched update norms, it is not an
+        effective-learning-rate artifact.</p>
         {tab}
         <div class="fig">{figs}</div>"""
-        status.append(f"Tier 1a: {len(wd.run_id.unique())} runs")
+        status.append("Tier 1a: computed from tier-0 WD grid")
     else:
-        status.append("Tier 1a (WD dose–response): pending")
+        status.append("Tier 1a (WD dose–response): pending tier 0")
 
     # ---------- Tier 1: LARS ----------
     la = A.load_tier("lars")

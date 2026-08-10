@@ -48,6 +48,8 @@ def select_config(lca, arm, exclude_partition=None):
     if exclude_partition is not None:
         d = d[d.partition != exclude_partition]
     g = d.groupby(["lr", "wd"]).lca.mean()
+    if len(g) == 0:
+        return None
     lr, wd = g.idxmax()
     return lr, wd, g.max()
 
@@ -98,6 +100,8 @@ def gate(df):
     for p in sorted(lca.partition.unique()):
         cn = select_config(lca, "nmlp", exclude_partition=p)
         cm = select_config(lca, "mlp", exclude_partition=p)
+        if cn is None or cm is None:
+            continue
         sub = lca[lca.partition == p]
         g = paired_gains(sub, cn, cm)
         if len(g):
@@ -114,6 +118,45 @@ def gate(df):
         pass_gain=bool(med * 100 >= 3.0 and lo > 0),
         pass_dominance=bool(frac >= 0.60),
     )
+
+
+def pareto_frontier(points):
+    """points: (N,2) array of (new, old). Returns sorted non-dominated set."""
+    pts = np.asarray(points)
+    keep = []
+    for p in pts:
+        dominated = ((pts[:, 0] >= p[0]) & (pts[:, 1] >= p[1])
+                     & ((pts[:, 0] > p[0]) | (pts[:, 1] > p[1]))).any()
+        if not dominated:
+            keep.append(p)
+    return np.array(sorted(keep, key=lambda x: x[0]))
+
+
+def pooled_frontier(df, arm):
+    """Pareto frontier across all (config, epoch) mean (new, old) points."""
+    d = phase2(df)
+    d = d[d.arm == arm]
+    g = d.groupby(["lr", "wd", "epoch"]).agg(old=("old_acc", "mean"),
+                                              new=("new_acc", "mean")).reset_index()
+    front = pareto_frontier(g[["new", "old"]].values)
+    auc = float(np.trapezoid(front[:, 1], front[:, 0])) if len(front) > 1 else 0.0
+    return front, auc
+
+
+def fig_pooled_frontier(fronts_aucs, title="Pooled stability–plasticity frontier (all configs × epochs)"):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(5.4, 4.2))
+    for lab, c, front, auc in fronts_aucs:
+        ax.plot(100 * front[:, 0], 100 * front[:, 1], marker="o", ms=3.5,
+                color=c, label=f"{lab} (AUC {auc:.3f})")
+    ax.set_xlabel("plasticity: new-class acc (%)")
+    ax.set_ylabel("stability: old-class acc (%)")
+    ax.grid(alpha=0.3)
+    ax.legend(frameon=False)
+    ax.set_title(title, fontsize=10)
+    return _svg(fig)
 
 
 # ---------------- figures (inline SVG) ----------------
