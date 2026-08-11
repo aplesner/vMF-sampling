@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project 5 — Angular perturbation of classifier latents</title>
+<style>
+  :root {
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --accent: #2a78d6;
+    --s1: #2a78d6;
+    --s2: #1baf7a;
+    --s3: #4a3aa7;
+    --code-bg: #f2f1ed;
+    --callout-bg: #f2f5fa;
+    --ok-bg: rgba(27, 175, 122, 0.13);   --ok-ink: #0f6b49;
+    --warn-bg: rgba(214, 158, 42, 0.16); --warn-ink: #7d5a06;
+    --bad-bg: rgba(214, 108, 42, 0.17);  --bad-ink: #8a3d09;
+    --crit-bg: rgba(201, 52, 52, 0.16);  --crit-ink: #92211f;
+    --note-bg: #f4f2ee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+      --muted: #898781; --grid: #2c2c2a; --baseline: #383835;
+      --border: rgba(255,255,255,0.10); --accent: #3987e5;
+      --s1: #3987e5; --s2: #199e70; --s3: #9085e9;
+      --code-bg: #232322; --callout-bg: #1d2430;
+      --ok-bg: rgba(25, 158, 112, 0.22);  --ok-ink: #5fd6a8;
+      --warn-bg: rgba(214, 158, 42, 0.20); --warn-ink: #e0b356;
+      --bad-bg: rgba(214, 108, 42, 0.22);  --bad-ink: #ef9d63;
+      --crit-bg: rgba(201, 52, 52, 0.24);  --crit-ink: #f0847f;
+      --note-bg: #1e1e1d;
+    }
+  }
+  html, body { background: var(--page); color-scheme: light dark; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink); line-height: 1.6; font-size: 15.5px; margin: 0;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 0 24px 96px; }
+  header.report-head { padding: 56px 0 8px; max-width: 780px; }
+  .eyebrow {
+    font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 14px; font-weight: 600;
+  }
+  h1 {
+    font-size: 33px; line-height: 1.22; margin: 0 0 12px;
+    letter-spacing: -0.015em; text-wrap: balance; font-weight: 700;
+  }
+  .subtitle { color: var(--ink-2); font-size: 17px; margin: 0 0 22px; max-width: 64ch; }
+  .meta-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .chip {
+    font-size: 12.5px; color: var(--ink-2); border: 1px solid var(--border);
+    border-radius: 999px; padding: 3px 11px; background: var(--surface); white-space: nowrap;
+  }
+  .chip b { color: var(--ink); font-weight: 600; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin: 30px 0 8px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px 14px; }
+  .tile .label { font-size: 12.5px; color: var(--muted); margin: 0 0 6px; }
+  .tile .value { font-size: 30px; font-weight: 650; line-height: 1.1; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .tile .note { font-size: 12.5px; color: var(--ink-2); margin: 0; line-height: 1.45; }
+  hr.rule { border: 0; border-top: 1px solid var(--border); margin: 34px 0; }
+  section { margin: 0 0 14px; }
+  section > h2 {
+    font-size: 23px; margin: 50px 0 14px; letter-spacing: -0.01em;
+    line-height: 1.25; text-wrap: balance; scroll-margin-top: 24px;
+  }
+  section > h2 .sec-n { color: var(--muted); font-weight: 600; margin-right: 10px; font-size: 18px; }
+  p, li { max-width: 72ch; color: var(--ink); }
+  section p { margin: 0 0 14px; }
+  ul, ol.body-list { padding-left: 22px; }
+  li { margin: 0 0 7px; }
+  a { color: var(--accent); }
+  code, pre { font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace; }
+  code { font-size: 0.885em; background: var(--code-bg); border-radius: 4px; padding: 1px 5px; }
+  .callout {
+    background: var(--callout-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 13px 17px; margin: 18px 0; font-size: 14px; color: var(--ink-2); max-width: 800px;
+  }
+  .callout strong { color: var(--ink); }
+  .callout code { background: rgba(137,135,129,0.16); }
+  .callout.warn { background: var(--warn-bg); }
+  .callout.crit { background: var(--crit-bg); }
+  .callout.ok { background: var(--ok-bg); }
+  .table-scroll { overflow-x: auto; margin: 18px 0; }
+  table.data-table {
+    border-collapse: collapse; font-size: 13.5px; min-width: 480px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  }
+  table.data-table th, table.data-table td {
+    text-align: left; padding: 7px 13px; border-bottom: 1px solid var(--grid); vertical-align: top;
+  }
+  table.data-table thead th {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--baseline); white-space: nowrap;
+  }
+  table.data-table tbody tr:last-child td { border-bottom: 0; }
+  table.data-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cell-ok   { background: var(--ok-bg);   color: var(--ok-ink);   font-weight: 600; }
+  .cell-warn { background: var(--warn-bg); color: var(--warn-ink); font-weight: 600; }
+  .cell-bad  { background: var(--bad-bg);  color: var(--bad-ink);  font-weight: 600; }
+  footer.report-foot {
+    margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--border);
+    font-size: 13px; color: var(--muted); max-width: 780px;
+  }
+  footer.report-foot p { margin: 0 0 6px; max-width: 74ch; }
+  footer.report-foot h3 { font-size: 14px; color: var(--ink-2); margin: 18px 0 6px; }
+  @media (max-width: 640px) {
+    h1 { font-size: 26px; }
+    .tile .value { font-size: 25px; }
+    header.report-head { padding-top: 36px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<header class="report-head">
+  <p class="eyebrow">Project 5 · hyperspherical representations program</p>
+  <h1>Angular perturbation of classifier latents</h1>
+  <p class="subtitle">
+    Calibrated vMF noise as a measurement instrument: angular dose–response per layer,
+    a layer-to-layer amplification matrix, and adversarial/corruption perturbations
+    expressed as noise-equivalent angular doses on the same curve. Both outcomes are
+    publishable; we report whichever we get.
+  </p>
+  <div class="meta-chips">
+    <span class="chip">Status as of <b>2026-08-10</b></span>
+    <span class="chip">Brief: <b>docs/projects/05</b></span>
+    <span class="chip">Budget: <b>~30 GPU-h (T1–T3) + 11 (gate)</b></span>
+    <span class="chip">Compute tier: <b>2× RTX 3090</b></span>
+  </div>
+</header>
+
+<div class="tiles">
+  <div class="tile">
+    <p class="label">Prerequisite gate: per-row (μᵢ, κᵢ) sampler</p>
+    <p class="value">closed</p>
+    <p class="note">Briefed range 2 days – 3 weeks. <strong>Actual: under 1 day.</strong> Implemented, statistically validated, and fast enough that T1 is never sampler-bound.</p>
+  </div>
+  <div class="tile">
+    <p class="label">Validation across 16 (p, κ) cells</p>
+    <p class="value">|z| ≤ 2.22</p>
+    <p class="note">Worst standardized deviation of the mean cosine E[μᵀz] from the closed-form A_p(κ) at n = 4096–8192 per cell; test threshold is 6σ. KS against the scalar sampler passes at α = 0.001.</p>
+  </div>
+  <div class="tile">
+    <p class="label">Throughput at T1 scale (CPU, fp64)</p>
+    <p class="value">266 ms</p>
+    <p class="note">50,000 samples at p = 512 per call — one full CIFAR-10 train-set pass per (layer, dose) pair. Negligible next to the network forward passes it accompanies.</p>
+  </div>
+  <div class="tile">
+    <p class="label">vmf-measure dependency</p>
+    <p class="value">pinned</p>
+    <p class="note">Project 6 shipped the frozen API/schema (v0.1.0, commit <code>2f146ef</code>, owner Andreas Plesner) mid-session. Project 5 pins it through one adapter, smoke-verified; no local null calibration anywhere.</p>
+  </div>
+</div>
+
+<section>
+  <h2><span class="sec-n">1</span>Status and gates</h2>
+  <ul class="body-list">
+    <li><strong>Per-row sampler (the binding constraint) — done.</strong> <code>src/vmf_torch_batched.py::sample_vmf_rows</code> draws one vMF(μᵢ, κᵢ) sample per row, device-native, per-call generator, κ = 0 exact-uniform limit. Full suite green (32 tests). T1 is unblocked.</li>
+    <li><strong>vmf-measure dependency — resolved.</strong> The frozen v0.1.0 API landed mid-session (commit <code>2f146ef</code>) and covers every Project 5 need unmodified: refusing <code>kappa_hat</code>, matched null quantiles, the admissibility surface, and the p ≥ 8192 log-Bessel path. Pinned through <code>src/vmf_measure_adapter.py</code>. See §3.</li>
+    <li><strong>T1–T4 — not started.</strong> Order: T1 (core), then T2; T3 only in Tramèr-compliant form; T4 behind its pre-registered kill condition.</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="sec-n">2</span>The prerequisite, scoped honestly</h2>
+  <p>
+    The brief estimated per-row (μᵢ, κᵢ) batched sampling at anywhere from 2 days to 3 weeks and
+    named it the binding constraint. The scoping finding: the range collapses once you look at the
+    algorithm. The Wood/Ulrich rejection sampler's Beta proposal concentration depends only on the
+    dimension, not on κ — so proposals stay row-independent and only the transform and acceptance
+    test become (B,)-tensor operations ("mask-and-refill"). The rotation is one Householder
+    reflection per row, already O(B·p). Nothing at T1–T3 scale (≤ 50k rows, p ≤ 512, batches on
+    commodity GPUs) requires kernel-level work, which is the only place the 3-week upper bound
+    could have come from.
+  </p>
+  <p>
+    <strong>Real number: ~1–2 days for the general per-row (μᵢ, κᵢ) version with statistical
+    validation; the T1-critical subset (per-row μᵢ with a scalar per-layer κ_inject = c·κ̂_ℓ) is
+    hours. Measured actual: under 1 day, shipped and validated.</strong> Downstream planning
+    (Projects 1, 4, 6) can treat Gap A from the experiment roadmap as closed.
+  </p>
+  <p>What shipped, beyond the roadmap decomposition:</p>
+  <ul class="body-list">
+    <li>The envelope parameter in rationalized form <code>b = d / (2κ + √(4κ² + d²))</code> — cancellation-free at both ends, so the κ → 0 uniform limit and κ → ∞ regime need no series-patch special cases (the scalar samplers carry one).</li>
+    <li>p = 2 (per-row von Mises) and p = 3 (closed-form inverse CDF, expm1/log1p-stable at κ → 0) paths, matching the scalar sampler's special cases.</li>
+    <li>Rows with μᵢ = e1 exactly get a zero Householder vector (no-op), so the north pole needs no branch.</li>
+    <li>Per-call <code>torch.Generator</code>; the global RNG is never touched, and sampler construction cannot reset global state (a program-wide invariant).</li>
+  </ul>
+
+  <h3>Validation evidence</h3>
+  <p>
+    Group-wise mean cosine E[μᵀz] against the closed-form A_p(κ) (CUSF-translated log-Bessel,
+    float64), standardized by the exact A′_p(κ) standard error. All cells must sit well inside 6σ.
+  </p>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr><th>p</th><th class="num">κ</th><th class="num">n</th><th class="num">mean μᵀz</th><th class="num">A_p(κ)</th><th class="num">z</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="num">4</td><td class="num">0.5</td><td class="num">8192</td><td class="num">0.12603</td><td class="num">0.12372</td><td class="num">+0.43</td></tr>
+        <tr><td class="num">4</td><td class="num">5</td><td class="num">8192</td><td class="num">0.72488</td><td class="num">0.71934</td><td class="num">+2.22</td></tr>
+        <tr><td class="num">4</td><td class="num">50</td><td class="num">8192</td><td class="num">0.97066</td><td class="num">0.97015</td><td class="num">+1.87</td></tr>
+        <tr><td class="num">4</td><td class="num">500</td><td class="num">8192</td><td class="num">0.99704</td><td class="num">0.99700</td><td class="num">+1.34</td></tr>
+        <tr><td class="num">16</td><td class="num">0.5</td><td class="num">8192</td><td class="num">0.02767</td><td class="num">0.03122</td><td class="num">−1.29</td></tr>
+        <tr><td class="num">16</td><td class="num">5</td><td class="num">8192</td><td class="num">0.28522</td><td class="num">0.28897</td><td class="num">−1.52</td></tr>
+        <tr><td class="num">16</td><td class="num">50</td><td class="num">8192</td><td class="num">0.85952</td><td class="num">0.85990</td><td class="num">−0.68</td></tr>
+        <tr><td class="num">16</td><td class="num">500</td><td class="num">8192</td><td class="num">0.98505</td><td class="num">0.98510</td><td class="num">−0.85</td></tr>
+        <tr><td class="num">128</td><td class="num">0.5</td><td class="num">8192</td><td class="num">0.00275</td><td class="num">0.00391</td><td class="num">−1.18</td></tr>
+        <tr><td class="num">128</td><td class="num">5</td><td class="num">8192</td><td class="num">0.03783</td><td class="num">0.03900</td><td class="num">−1.20</td></tr>
+        <tr><td class="num">128</td><td class="num">50</td><td class="num">8192</td><td class="num">0.34361</td><td class="num">0.34476</td><td class="num">−1.42</td></tr>
+        <tr><td class="num">128</td><td class="num">500</td><td class="num">8192</td><td class="num">0.88080</td><td class="num">0.88092</td><td class="num">−0.75</td></tr>
+        <tr><td class="num">512</td><td class="num">0.5</td><td class="num">4096</td><td class="num">0.00162</td><td class="num">0.00098</td><td class="num">+0.94</td></tr>
+        <tr><td class="num">512</td><td class="num">5</td><td class="num">4096</td><td class="num">0.01040</td><td class="num">0.00976</td><td class="num">+0.92</td></tr>
+        <tr><td class="num">512</td><td class="num">50</td><td class="num">4096</td><td class="num">0.09728</td><td class="num">0.09675</td><td class="num">+0.79</td></tr>
+        <tr><td class="num">512</td><td class="num">500</td><td class="num">4096</td><td class="num">0.61175</td><td class="num">0.61175</td><td class="num">+0.02</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Also passing: two-sample KS against the scalar <code>TorchvMFHH</code> at p = 32, κ = 8,
+    n = 20,000 (α = 0.001); a single heterogeneous call mixing κ ∈ {0, 1, 20, 1000} row-wise with
+    per-group mean checks; κ = 0 uniformity; transverse isotropy; per-seed reproducibility;
+    global-RNG non-interference; p = 2 and p = 3 paths; fp16/bf16/fp32/fp64 output dtypes.
+  </p>
+
+  <h3>Throughput (Apple M3 Max CPU, float64)</h3>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr><th class="num">B</th><th class="num">p</th><th class="num">κ</th><th class="num">ms / call</th><th class="num">samples / s</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="num">10,000</td><td class="num">512</td><td class="num">1000</td><td class="num">56</td><td class="num">0.18M</td></tr>
+        <tr><td class="num">50,000</td><td class="num">512</td><td class="num">1000</td><td class="num">266</td><td class="num">0.19M</td></tr>
+        <tr><td class="num">50,000</td><td class="num">512</td><td class="num">50</td><td class="num">261</td><td class="num">0.19M</td></tr>
+        <tr><td class="num">50,000</td><td class="num">64</td><td class="num">10</td><td class="num">40</td><td class="num">1.24M</td></tr>
+        <tr><td class="num">50,000 (κ ~ logspace 10⁻²–10⁴ per row)</td><td class="num">512</td><td class="num">mixed</td><td class="num">263</td><td class="num">0.19M</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    The heterogeneous-κ row is the rejection loop's worst case (rounds are set by the slowest row)
+    and costs the same as the scalar case — mask-and-refill is doing its job. These are local CPU
+    smoke numbers, not cluster measurements; T1 runs on the 2× RTX 3090 tier where this is faster
+    and, either way, noise generation is never the bottleneck next to the accompanying forward passes.
+  </p>
+</section>
+
+<section>
+  <h2><span class="sec-n">3</span>Dependency: Project 6's <code>vmf-measure</code></h2>
+  <div class="callout ok">
+    <strong>Resolved before T1 started.</strong> <code>vmf-measure</code> v0.1.0 landed at commit
+    <code>2f146ef</code> with the frozen API and schema the shared constraints require (owner:
+    Andreas Plesner). Project 5 pins the schema, not the numbers, through a single adapter
+    (<code>src/vmf_measure_adapter.py</code>) that sys.path-inserts Project 6's <code>src/</code>
+    and refuses a major-version change. The full pin record is in
+    <code>vmf_measure_interface.md</code>.
+  </div>
+  <p>
+    Smoke verification (2026-08-10): refusal mode returns the frozen string
+    <code>"not resolvable at this n"</code> with <code>kappa = None</code>; the surface reproduces
+    the constraints-file canonical cell (<code>rel_rmse_surface(0.85, 512, 256) = 0.0063</code>,
+    i.e. the measured 0.63% cell); the uniform-null κ̂ q95 at (p = 512, n = 10⁴) is 5.38 —
+    the scale of the matched null every reported κ̂ will be quoted against;
+    <code>bessel_ratio_ap</code> is finite at p = 2048, the top of the T2 grid, where stock SciPy
+    cannot compute at all. Null calibration for Project 5 is thereby entirely Project-6-sourced;
+    nothing local is or will be written.
+  </p>
+</section>
+
+<section>
+  <h2><span class="sec-n">4</span>Experiment plan and pre-registered conditions</h2>
+  <ul class="body-list">
+    <li><strong>T1 — angular dose–response and amplification (~5 GPU-h, the core).</strong> ResNet-18 (+ normalized variant), CIFAR-10, 3 seeds. Inject at κ_inject = c·κ̂_ℓ, c ∈ {0.25, 0.5, 1, 2, 4, 10}; accuracy vs closed-form dose A_p(κ); downstream displacement gives the layer-to-layer amplification matrix. PGD/AutoAttack and CIFAR-10-C displacements at matched accuracy degradation become noise-equivalent doses on the same curve. On-curve (Tramèr's picture in geometric form) and off-curve (a directional signature) are both the result; whichever lands gets reported.</li>
+    <li><strong>T2 — p-sweep (~4 GPU-h).</strong> Fixed backbone, fixed n, head width p ∈ {64,…,2048}; κ̂ with matched nulls in every cell against the closed-form RMSE surface. Hard-blocked on the §3 freeze.</li>
+    <li><strong>T3 — detection, Tramèr-compliant or not at all (~9 GPU-h), reported as a negative.</strong> Encoders shared across all detectors; LID and feature squeezing alongside Mahalanobis and energy; CIFAR-10-C control at matched clean-accuracy degradation; AutoAttack + Square held out (split declared in this repo before any tuning); adaptive attack with EOT-20; <strong>post-adaptive AUROC is the headline.</strong></li>
+    <li><strong>T4 — robustness gate (~11 GPU-h), expected to fail.</strong> Fast-AT pair, each arm with its own 5-point LR sweep, full masking screen. MDE stated up front: ~2.5–4.7 points at 3 seeds vs a literature-typical claimed 1–3. <strong>Kill condition:</strong> gap below MDE at tuned LRs, or any masking diagnostic failing in ≥ 2/3 seeds → intervention arm cancelled permanently, shipped as a falsification paragraph.</li>
+  </ul>
+  <p>
+    Pre-registration: each run config lands in <code>configs/</code> with its success criterion and
+    a commit hash before the run. Compute follows the shared constraints — 2× RTX 3090 as two
+    independent workers, node-local <code>/scratch</code> for hot data, <code>net_scratch</code>
+    for canonical storage; escalation only if VRAM actually forces it, logged with the reason.
+  </p>
+</section>
+
+<section>
+  <h2><span class="sec-n">5</span>Guardrails — retired claims that must not come back</h2>
+  <div class="callout crit">
+    <strong>Both numerically refuted; do not reintroduce.</strong>
+    (1) "A converged CIFAR-100 class at n = 500 &lt; p = 512 is unestimable" — measured relative
+    RMSE is <strong>0.63%</strong>; at high concentration the bias floor is ≈ 1/n and "n &lt; p"
+    carries no information. (2) The KappaFace audit target — at n ≈ 70, p = 512, κ/p ~ 1–3 the
+    rel. RMSE is 1.9–2.9% with Spearman(true, κ̂) = <strong>0.995</strong>, and κ̂ is z-scored
+    across classes before use, so any common bias cancels by construction.
+  </div>
+  <p>
+    The constructive reframe this project does carry: κ̂ is well-conditioned exactly where the
+    trace-ratio NC1 statistic is not (singular pseudo-inverse at n_class &lt; p), and T2's p-sweep
+    at fixed backbone and fixed n is the direct empirical test that κ/p, not p, governs
+    estimability — validation-on-trained-networks of Project 6's theory, cross-cited.
+  </p>
+</section>
+
+<footer class="report-foot">
+  <h3>Changelog</h3>
+  <p><strong>2026-08-10</strong> — Project scaffolded. Per-row (μᵢ, κᵢ) sampler implemented in <code>src/vmf_torch_batched.py</code> with statistical validation in <code>tests/test_batched.py</code>; full suite (32 tests) green. Scoping result: binding constraint closed in under 1 day against a briefed 2-day–3-week range. <code>vmf-measure</code> v0.1.0 (frozen schema, commit <code>2f146ef</code>) landed mid-session and is pinned through <code>src/vmf_measure_adapter.py</code>; the pin is recorded in <code>vmf_measure_interface.md</code>. Both week-1 gates are closed; T1 execution is next.</p>
+  <p>Primary channel for Project 5 findings; updated as results land. Code and configs under <code>projects/latent-geometry/</code>; large artifacts on <code>net_scratch</code> only.</p>
+</footer>
+</div>
+
+</body>
+</html>

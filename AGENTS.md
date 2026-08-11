@@ -85,6 +85,49 @@ norm of the sample mean; at fixed sample count and fixed kappa it becomes noisy
 relative to its signal as dimension grows, producing genuine finite-sample
 upward bias shared by all accurate MLE solvers.
 
+`scripts/benchmark_kappa.py` runs the four studies (population, sampled, timing,
+sampler-cost, plus an opt-in reliability study) and `scripts/analyze_kappa.py`
+renders them. An `mpmath` reference at 50 decimal digits supplies both the
+population `Rbar` and the per-sample MLE; it recovers the generating kappa to
+4.4e-15 across the whole grid and stays finite where SciPy does not.
+
+Established by the `m3max_cpu_fp64` run, and superseding the `kappa=50`-only
+observations below:
+
+- SciPy's `special.ive` underflows to exactly zero for order roughly 511 and
+  above, so `scipy_log_iv` returns `-inf`. At `p >= 1024` Sra's two-step and the
+  SciPy Brent reference return `NaN`, and safeguarded Newton degenerates to
+  bisection and stalls near 1e-3 relative error. Compiled CUSF stays at ~1e-13
+  everywhere. Use the CUSF or pure-PyTorch path for any `p >= 1024` work.
+- Sra's two steps are weakest at *low* dimension, not high: 1.9e-6 relative
+  error at `p=3, kappa=10` against 3.8e-12 for iterated Newton. At `p >= 64` the
+  two steps reach machine precision. Do not generalize the `kappa=50` grid's
+  "already converged" behavior to small `p`.
+- Banerjee's closed form is strongest in the high-`p`/low-kappa corner (2.4e-8
+  at `p=4096, kappa=1`) and its error grows with `kappa/p`, not with `p`.
+- Statistical error dominates numerical error by orders of magnitude. At
+  `n=10000`, median relative error against the generating kappa is 39.8 at
+  `p=4096, kappa=1` and 9.3 at `p=1024, kappa=1`, identical across every
+  accurate solver. Report any `kappa_hat` on real data against a matched
+  uniform null, whose mean is not zero.
+- `direct_log_likelihood_kappa` occasionally fails outright (relative error 1.0
+  at `p=256, kappa=1` and `p=1024, kappa=200`) because SciPy's bounded Brent
+  search hits non-finite values on the flat objective. It is a validation
+  method, not a solver.
+
+Throughput at dimension 256, Apple M3 Max CPU, float64, no OpenMP: CUSF Sra
+two-step reaches 5.3M estimates/s at batch 1048576, 11.2x SciPy's log-Bessel
+path and 216x the SciPy Brent reference. Banerjee reaches 290M/s. At batch 1,
+SciPy is marginally faster than the device path, which is dominated by dispatch
+overhead. Sampler-cost rows in that run are small-batch M3 Max timings for the
+study's own data generation and must not be presented as replacements for the
+calibrated cluster headline speedups above.
+
+`docs/experiment_roadmap.md` records the S-VAE and nGPT experiment program
+derived from `papers/vmf_vae.pdf` and `papers/ngpt.pdf`, including the two
+capability gaps (per-row batched `(mu_i, kappa_i)` sampling, and a stable
+differentiable vMF KL at large `m`) that most of it depends on.
+
 Preliminary local float64 reference data for `kappa=50` are under
 `measurements/kappa/`:
 

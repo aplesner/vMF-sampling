@@ -1,0 +1,1230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vMF Concentration Estimation — Benchmark and Experiment Program</title>
+<style>
+  :root {
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --accent: #2a78d6;
+    --s1: #2a78d6;
+    --s2: #1baf7a;
+    --s3: #4a3aa7;
+    --code-bg: #f2f1ed;
+    --callout-bg: #f2f5fa;
+    /* semantic severity — separate from the accent hue */
+    --ok-bg: rgba(27, 175, 122, 0.13);   --ok-ink: #0f6b49;
+    --warn-bg: rgba(214, 158, 42, 0.16); --warn-ink: #7d5a06;
+    --bad-bg: rgba(214, 108, 42, 0.17);  --bad-ink: #8a3d09;
+    --crit-bg: rgba(201, 52, 52, 0.16);  --crit-ink: #92211f;
+    --note-bg: #f4f2ee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+      --muted: #898781; --grid: #2c2c2a; --baseline: #383835;
+      --border: rgba(255,255,255,0.10); --accent: #3987e5;
+      --s1: #3987e5; --s2: #199e70; --s3: #9085e9;
+      --code-bg: #232322; --callout-bg: #1d2430;
+      --ok-bg: rgba(25, 158, 112, 0.22);  --ok-ink: #5fd6a8;
+      --warn-bg: rgba(214, 158, 42, 0.20); --warn-ink: #e0b356;
+      --bad-bg: rgba(214, 108, 42, 0.22);  --bad-ink: #ef9d63;
+      --crit-bg: rgba(201, 52, 52, 0.24);  --crit-ink: #f0847f;
+      --note-bg: #1e1e1d;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+    --muted: #898781; --grid: #2c2c2a; --baseline: #383835;
+    --border: rgba(255,255,255,0.10); --accent: #3987e5;
+    --s1: #3987e5; --s2: #199e70; --s3: #9085e9;
+    --code-bg: #232322; --callout-bg: #1d2430;
+    --ok-bg: rgba(25, 158, 112, 0.22);  --ok-ink: #5fd6a8;
+    --warn-bg: rgba(214, 158, 42, 0.20); --warn-ink: #e0b356;
+    --bad-bg: rgba(214, 108, 42, 0.22);  --bad-ink: #ef9d63;
+    --crit-bg: rgba(201, 52, 52, 0.24);  --crit-ink: #f0847f;
+    --note-bg: #1e1e1d;
+  }
+  :root[data-theme="light"] {
+    --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e;
+    --muted: #898781; --grid: #e1e0d9; --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10); --accent: #2a78d6;
+    --s1: #2a78d6; --s2: #1baf7a; --s3: #4a3aa7;
+    --code-bg: #f2f1ed; --callout-bg: #f2f5fa;
+    --ok-bg: rgba(27, 175, 122, 0.13);   --ok-ink: #0f6b49;
+    --warn-bg: rgba(214, 158, 42, 0.16); --warn-ink: #7d5a06;
+    --bad-bg: rgba(214, 108, 42, 0.17);  --bad-ink: #8a3d09;
+    --crit-bg: rgba(201, 52, 52, 0.16);  --crit-ink: #92211f;
+    --note-bg: #f4f2ee;
+  }
+
+  html, body { background: var(--page); color-scheme: light dark; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink); line-height: 1.6; font-size: 15.5px; margin: 0;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 0 24px 96px; }
+  .prose { max-width: 760px; }
+
+  header.report-head { padding: 56px 0 8px; max-width: 780px; }
+  .eyebrow {
+    font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 14px; font-weight: 600;
+  }
+  h1 {
+    font-size: 33px; line-height: 1.22; margin: 0 0 12px;
+    letter-spacing: -0.015em; text-wrap: balance; font-weight: 700;
+  }
+  .subtitle { color: var(--ink-2); font-size: 17px; margin: 0 0 22px; max-width: 64ch; }
+  .meta-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .chip {
+    font-size: 12.5px; color: var(--ink-2); border: 1px solid var(--border);
+    border-radius: 999px; padding: 3px 11px; background: var(--surface); white-space: nowrap;
+  }
+  .chip b { color: var(--ink); font-weight: 600; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin: 30px 0 8px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px 14px; }
+  .tile .label { font-size: 12.5px; color: var(--muted); margin: 0 0 6px; }
+  .tile .value { font-size: 30px; font-weight: 650; line-height: 1.1; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .tile .note { font-size: 12.5px; color: var(--ink-2); margin: 0; line-height: 1.45; }
+
+  nav.toc { margin: 34px 0 10px; max-width: 900px; }
+  nav.toc ol { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13.5px; }
+  nav.toc a { color: var(--ink-2); text-decoration: none; border-bottom: 1px solid var(--border); padding-bottom: 1px; }
+  nav.toc a:hover, nav.toc a:focus-visible { color: var(--accent); border-bottom-color: var(--accent); }
+  nav.toc .n { color: var(--muted); font-weight: 600; margin-right: 5px; }
+
+  hr.rule { border: 0; border-top: 1px solid var(--border); margin: 34px 0; }
+
+  section { margin: 0 0 14px; }
+  section > h2 {
+    font-size: 23px; margin: 50px 0 14px; letter-spacing: -0.01em;
+    line-height: 1.25; text-wrap: balance; scroll-margin-top: 24px;
+  }
+  section > h2 .sec-n { color: var(--muted); font-weight: 600; margin-right: 10px; font-size: 18px; }
+  section h3 { font-size: 17px; margin: 30px 0 8px; }
+  section h4 { font-size: 14.5px; margin: 22px 0 6px; color: var(--ink); }
+  p, li { max-width: 72ch; color: var(--ink); }
+  section p { margin: 0 0 14px; }
+  ul, ol.body-list { padding-left: 22px; }
+  li { margin: 0 0 7px; }
+  a { color: var(--accent); }
+  code, .equation, pre { font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace; }
+  code { font-size: 0.885em; background: var(--code-bg); border-radius: 4px; padding: 1px 5px; }
+  pre.code-block {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; overflow-x: auto; font-size: 12.8px; line-height: 1.55; max-width: 860px;
+  }
+  pre.code-block code { background: none; padding: 0; font-size: inherit; }
+  .equation {
+    background: var(--code-bg); border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0; padding: 12px 18px; margin: 16px 0;
+    font-size: 14px; line-height: 1.9; overflow-x: auto; max-width: 760px; white-space: pre-wrap;
+  }
+  .callout {
+    background: var(--callout-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 13px 17px; margin: 18px 0; font-size: 14px; color: var(--ink-2); max-width: 800px;
+  }
+  .callout strong { color: var(--ink); }
+  .callout code { background: rgba(137,135,129,0.16); }
+  .callout.warn { background: var(--warn-bg); }
+  .callout.crit { background: var(--crit-bg); }
+
+  .table-scroll { overflow-x: auto; margin: 18px 0; }
+  table.data-table {
+    border-collapse: collapse; font-size: 13.5px; min-width: 480px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  }
+  table.data-table th, table.data-table td {
+    text-align: left; padding: 7px 13px; border-bottom: 1px solid var(--grid); vertical-align: top;
+  }
+  table.data-table thead th {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--baseline); white-space: nowrap;
+  }
+  table.data-table tbody tr:last-child td { border-bottom: 0; }
+  table.data-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  table.data-table td.rowhead { font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
+  table.data-table tbody th {
+    font-size: 13px; font-weight: 600; white-space: nowrap;
+    border-bottom: 1px solid var(--grid);
+  }
+  .cell-ok   { background: var(--ok-bg);   color: var(--ok-ink);   font-weight: 600; }
+  .cell-warn { background: var(--warn-bg); color: var(--warn-ink); font-weight: 600; }
+  .cell-bad  { background: var(--bad-bg);  color: var(--bad-ink);  font-weight: 600; }
+  .cell-crit { background: var(--crit-bg); color: var(--crit-ink); font-weight: 700; }
+  .sev-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 12px 0 4px; font-size: 12.5px; }
+  .sev-legend .key { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-2); }
+  .sev-legend .box { width: 22px; height: 13px; border-radius: 3px; border: 1px solid var(--border); flex: none; }
+
+  .band { background: var(--note-bg); border: 1px solid var(--border); border-radius: 10px; padding: 4px 20px 18px; margin: 24px 0; }
+  .band h3 { margin-top: 20px; }
+
+  /* experiment cards */
+  .exp-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); margin: 18px 0 6px; }
+  .exp {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 9px;
+    padding: 13px 15px 14px; display: flex; flex-direction: column; gap: 7px;
+  }
+  .exp-head { display: flex; align-items: baseline; gap: 9px; }
+  .exp-id {
+    font-family: ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 700;
+    color: var(--accent); flex: none; padding-top: 1px;
+  }
+  .exp-title { font-size: 14.5px; font-weight: 650; line-height: 1.35; margin: 0; }
+  .exp p { font-size: 13.2px; color: var(--ink-2); margin: 0; line-height: 1.52; max-width: none; }
+  .exp p em { color: var(--ink); font-style: normal; font-weight: 600; }
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+  .badge {
+    font-size: 11.5px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--ink-2); white-space: nowrap;
+  }
+  .badge.infer { background: var(--ok-bg); color: var(--ok-ink); border-color: transparent; font-weight: 600; }
+  .badge.train { background: var(--warn-bg); color: var(--warn-ink); border-color: transparent; font-weight: 600; }
+  .badge.gap { background: var(--callout-bg); }
+  .badge.pick { background: var(--crit-bg); color: var(--crit-ink); border-color: transparent; font-weight: 600; }
+
+  ol.steps { list-style: none; padding: 0; margin: 18px 0; counter-reset: step; max-width: 800px; }
+  ol.steps li {
+    counter-increment: step; position: relative; padding-left: 40px; margin: 0 0 13px;
+    font-size: 14.2px; max-width: 74ch;
+  }
+  ol.steps li::before {
+    content: counter(step); position: absolute; left: 0; top: 0;
+    width: 25px; height: 25px; border-radius: 50%; background: var(--surface);
+    border: 1px solid var(--baseline); color: var(--ink-2);
+    font-size: 12px; font-weight: 650; display: flex; align-items: center; justify-content: center;
+    font-variant-numeric: tabular-nums;
+  }
+  ol.steps li b { color: var(--ink); }
+
+  footer.report-foot {
+    margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--border);
+    font-size: 13px; color: var(--muted); max-width: 780px;
+  }
+  footer.report-foot p { margin: 0 0 6px; max-width: 74ch; }
+
+  @media (max-width: 640px) {
+    h1 { font-size: 26px; }
+    .tile .value { font-size: 25px; }
+    header.report-head { padding-top: 36px; }
+    .band { padding: 4px 14px 16px; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    nav.toc a, .chip { transition: color 120ms ease, border-color 120ms ease; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<header class="report-head">
+  <p class="eyebrow">Estimation report · vMF-sampling</p>
+  <h1>Estimating the von Mises–Fisher concentration parameter: what works, where it breaks, and what to build on it</h1>
+  <p class="subtitle">
+    A benchmark of five concentration estimators against Sra's two-step method across
+    dimensions 3–4096, followed by the experiment program that the fast sampler and these
+    estimators jointly enable on the hyperspherical VAE and nGPT.
+  </p>
+  <div class="meta-chips">
+    <span class="chip">Measured <b>Aug 5, 2026</b></span>
+    <span class="chip">Apple <b>M3 Max</b> CPU, float64</span>
+    <span class="chip">Dims <b>3 → 4096</b></span>
+    <span class="chip">κ <b>1 → 1000</b></span>
+    <span class="chip">Reference: <b>mpmath, 50 dps</b></span>
+    <span class="chip">No OpenMP · CUDA untested</span>
+  </div>
+</header>
+
+<div class="tiles">
+  <div class="tile">
+    <p class="label">SciPy's Bessel path at p ≥ 1024</p>
+    <p class="value">fails</p>
+    <p class="note"><code>special.ive</code> underflows to exactly 0 above order ≈511, so Sra-with-SciPy and the Brent reference return NaN. Compiled CUSF holds ~1e-13 everywhere.</p>
+  </div>
+  <div class="tile">
+    <p class="label">CUSF Sra two-step throughput</p>
+    <p class="value">5.3M/s</p>
+    <p class="note">Estimates per second at batch 2<sup>20</sup>, dim 256. 11.2× SciPy's log-Bessel path; 216× the SciPy Brent reference.</p>
+  </div>
+  <div class="tile">
+    <p class="label">Worst statistical error, n = 10<sup>4</sup></p>
+    <p class="value">3980%</p>
+    <p class="note">At p = 4096, κ = 1 — identical across every accurate solver. Statistical error dominates numerical error by ~12 orders of magnitude.</p>
+  </div>
+  <div class="tile">
+    <p class="label">Sra's two steps, weakest case</p>
+    <p class="value">p = 3</p>
+    <p class="note">1.9e-6 relative error at low dimension, against 3.8e-12 for iterated Newton. The weak spot is small p, not large p.</p>
+  </div>
+</div>
+
+<nav class="toc" aria-label="Contents">
+  <ol>
+    <li><span class="n">1</span><a href="#what">What was measured</a></li>
+    <li><span class="n">2</span><a href="#numerical">Numerical accuracy</a></li>
+    <li><span class="n">3</span><a href="#breakdown">The SciPy breakdown</a></li>
+    <li><span class="n">4</span><a href="#sampled">Sampled data</a></li>
+    <li><span class="n">5</span><a href="#reliability">The reliability surface</a></li>
+    <li><span class="n">6</span><a href="#throughput">Throughput</a></li>
+    <li><span class="n">7</span><a href="#papers">The two papers</a></li>
+    <li><span class="n">8</span><a href="#gaps">Capability gaps</a></li>
+    <li><span class="n">9</span><a href="#experiments">Experiment program</a></li>
+    <li><span class="n">10</span><a href="#ordering">Ordering</a></li>
+    <li><span class="n">11</span><a href="#scope">Scope &amp; caveats</a></li>
+  </ol>
+</nav>
+
+<hr class="rule">
+
+<section id="what">
+  <h2><span class="sec-n">1</span>What was measured</h2>
+  <div class="prose">
+    <p>
+      The joint vMF maximum-likelihood problem estimates the mean direction from the sample
+      resultant and then solves a single scalar equation for the concentration:
+    </p>
+    <div class="equation">A_p(κ) = I_(p/2)(κ) / I_(p/2−1)(κ) = R̄,     R̄ = ‖ mean(samples) ‖</div>
+    <p>
+      Five methods were compared, plus device-native variants of the first three. Attribution
+      matters here and is easy to get wrong: the closed form is <strong>Banerjee et al. (2005)</strong>,
+      while <strong>Sra (2012)</strong> initializes with that value and performs exactly two Newton
+      updates. The closed form alone is not "the Sra estimator."
+    </p>
+    <ol class="body-list">
+      <li><strong>Banerjee closed form</strong> — <code>R̄(p − R̄²)/(1 − R̄²)</code>, no Bessel evaluation.</li>
+      <li><strong>Sra two-step</strong> — Banerjee initialization, exactly two Newton updates.</li>
+      <li><strong>Converged Newton</strong> — safeguarded, iterated to tolerance, using Sra's analytic bracket with bisection fallback for out-of-bracket proposals.</li>
+      <li><strong>SciPy Brent</strong> — independent CPU root solve on the scaled Bessel ratio.</li>
+      <li><strong>Direct likelihood</strong> — bounded maximization of <code>ν·log κ − log I_ν(κ) + κR̄</code>, a validation path rather than a solver.</li>
+    </ol>
+    <p>
+      Each of the first three also runs device-native in PyTorch against compiled CUSF
+      <code>iv_log</code>. Three questions are kept strictly separate, because conflating them is
+      how this kind of benchmark usually goes wrong.
+    </p>
+  </div>
+
+  <div class="band prose">
+    <h3>The three questions</h3>
+    <p>
+      <strong>Numerical approximation.</strong> Set <code>R̄</code> from a high-precision population
+      ratio for a known <code>(p, κ)</code>. Every exact solver should recover the generating κ, so
+      this isolates method error from sample noise.
+    </p>
+    <p>
+      <strong>Estimation from samples.</strong> Draw independent datasets, reduce each once to
+      <code>R̄</code>, and feed identical values to every method. Report deviation from the
+      high-accuracy MLE <em>for that same sample</em> separately from deviation from the generating κ.
+      The second is not numerical error.
+    </p>
+    <p style="margin-bottom:0">
+      <strong>Performance.</strong> Time estimators on precomputed <code>R̄</code> batches, with
+      sample generation and the reduction to <code>R̄</code> excluded.
+    </p>
+  </div>
+
+  <div class="prose">
+    <p>
+      The reference is new to this run and load-bearing. An <code>mpmath</code> solver at 50 decimal
+      digits supplies both the population <code>R̄</code> and the per-sample MLE; it recovers the
+      generating κ to <strong>4.4e-15</strong> across the entire grid, and — unlike SciPy — stays
+      finite everywhere. Without it, the most interesting rows of every table below would be blank.
+    </p>
+  </div>
+</section>
+
+<section id="numerical">
+  <h2><span class="sec-n">2</span>Numerical accuracy on population R̄</h2>
+  <div class="prose">
+    <p>
+      Relative error against the generating κ, with <code>R̄</code> set to the exact population
+      ratio. Every cell here would be zero for a perfect solver, so this table is pure method error.
+    </p>
+  </div>
+
+  <div class="sev-legend">
+    <span class="key"><span class="box" style="background:var(--ok-bg)"></span>≤ 1e-10, at or near machine precision</span>
+    <span class="key"><span class="box" style="background:var(--warn-bg)"></span>1e-10 to 1e-5</span>
+    <span class="key"><span class="box" style="background:var(--bad-bg)"></span>&gt; 1e-5</span>
+    <span class="key"><span class="box" style="background:var(--crit-bg)"></span>NaN or total failure</span>
+  </div>
+
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>p</th><th>κ</th><th>Banerjee</th>
+          <th>Sra 2-step<br>(SciPy)</th><th>Sra 2-step<br>(CUSF)</th>
+          <th>Newton<br>(SciPy)</th><th>Newton<br>(CUSF)</th>
+          <th>SciPy<br>Brent</th><th>Direct<br>likelihood</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="rowhead">3</td><td class="rowhead">1</td><td class="num cell-bad">7.1e-03</td><td class="num cell-ok">1.5e-11</td><td class="num cell-ok">1.5e-11</td><td class="num cell-ok">1.5e-11</td><td class="num cell-ok">1.5e-11</td><td class="num cell-ok">1.4e-14</td><td class="num cell-warn">1.8e-08</td></tr>
+        <tr><td class="rowhead">3</td><td class="rowhead">10</td><td class="num cell-bad">3.7e-02</td><td class="num cell-bad">1.9e-06</td><td class="num cell-bad">1.9e-06</td><td class="num cell-ok">3.8e-12</td><td class="num cell-ok">3.8e-12</td><td class="num cell-ok">1.2e-15</td><td class="num cell-warn">4.5e-09</td></tr>
+        <tr><td class="rowhead">3</td><td class="rowhead">50</td><td class="num cell-bad">9.5e-03</td><td class="num cell-warn">8.1e-09</td><td class="num cell-warn">8.1e-09</td><td class="num cell-ok">1.4e-14</td><td class="num cell-ok">1.4e-14</td><td class="num cell-ok">1.7e-15</td><td class="num cell-warn">4.7e-08</td></tr>
+        <tr><td class="rowhead">3</td><td class="rowhead">200</td><td class="num cell-bad">2.5e-03</td><td class="num cell-ok">3.7e-11</td><td class="num cell-ok">3.7e-11</td><td class="num cell-ok">3.7e-11</td><td class="num cell-ok">3.7e-11</td><td class="num cell-ok">3.4e-14</td><td class="num cell-warn">4.7e-08</td></tr>
+        <tr><td class="rowhead">3</td><td class="rowhead">1000</td><td class="num cell-bad">5.0e-04</td><td class="num cell-ok">9.1e-12</td><td class="num cell-ok">9.1e-12</td><td class="num cell-ok">9.1e-12</td><td class="num cell-ok">9.1e-12</td><td class="num cell-ok">4.1e-14</td><td class="num cell-warn">2.7e-08</td></tr>
+
+        <tr><td class="rowhead">16</td><td class="rowhead">1</td><td class="num cell-bad">1.9e-04</td><td class="num cell-ok">5.6e-16</td><td class="num cell-ok">1.1e-15</td><td class="num cell-ok">3.6e-10</td><td class="num cell-ok">3.6e-10</td><td class="num cell-ok">2.2e-16</td><td class="num cell-warn">3.1e-08</td></tr>
+        <tr><td class="rowhead">16</td><td class="rowhead">10</td><td class="num cell-bad">8.4e-03</td><td class="num cell-ok">6.1e-10</td><td class="num cell-ok">6.1e-10</td><td class="num cell-ok">0.0e+00</td><td class="num cell-ok">1.4e-15</td><td class="num cell-ok">1.8e-16</td><td class="num cell-warn">1.5e-08</td></tr>
+        <tr><td class="rowhead">16</td><td class="rowhead">50</td><td class="num cell-bad">7.2e-03</td><td class="num cell-warn">2.1e-09</td><td class="num cell-warn">2.1e-09</td><td class="num cell-ok">2.9e-14</td><td class="num cell-ok">3.0e-14</td><td class="num cell-ok">8.5e-16</td><td class="num cell-warn">8.7e-10</td></tr>
+        <tr><td class="rowhead">16</td><td class="rowhead">200</td><td class="num cell-bad">2.3e-03</td><td class="num cell-ok">2.7e-11</td><td class="num cell-ok">2.7e-11</td><td class="num cell-ok">2.7e-11</td><td class="num cell-ok">2.7e-11</td><td class="num cell-ok">7.5e-15</td><td class="num cell-warn">1.6e-08</td></tr>
+        <tr><td class="rowhead">16</td><td class="rowhead">1000</td><td class="num cell-bad">4.9e-04</td><td class="num cell-ok">9.1e-12</td><td class="num cell-ok">9.1e-12</td><td class="num cell-ok">9.1e-12</td><td class="num cell-ok">9.1e-12</td><td class="num cell-ok">3.4e-15</td><td class="num cell-warn">5.0e-08</td></tr>
+
+        <tr><td class="rowhead">64</td><td class="rowhead">1</td><td class="num cell-warn">3.6e-06</td><td class="num cell-ok">4.4e-15</td><td class="num cell-ok">4.4e-15</td><td class="num cell-ok">2.7e-15</td><td class="num cell-ok">2.7e-15</td><td class="num cell-ok">1.6e-14</td><td class="num cell-bad">2.6e-07</td></tr>
+        <tr><td class="rowhead">64</td><td class="rowhead">10</td><td class="num cell-bad">3.3e-04</td><td class="num cell-ok">6.9e-15</td><td class="num cell-ok">4.8e-15</td><td class="num cell-ok">6.9e-15</td><td class="num cell-ok">4.8e-15</td><td class="num cell-ok">1.3e-14</td><td class="num cell-warn">3.3e-08</td></tr>
+        <tr><td class="rowhead">64</td><td class="rowhead">50</td><td class="num cell-bad">2.5e-03</td><td class="num cell-ok">7.9e-12</td><td class="num cell-ok">7.9e-12</td><td class="num cell-ok">7.9e-12</td><td class="num cell-ok">7.9e-12</td><td class="num cell-ok">1.4e-16</td><td class="num cell-warn">2.7e-08</td></tr>
+        <tr><td class="rowhead">64</td><td class="rowhead">200</td><td class="num cell-bad">1.8e-03</td><td class="num cell-ok">8.0e-12</td><td class="num cell-ok">2.2e-11</td><td class="num cell-ok">8.0e-12</td><td class="num cell-ok">2.2e-11</td><td class="num cell-ok">1.4e-16</td><td class="num cell-warn">2.7e-08</td></tr>
+        <tr><td class="rowhead">64</td><td class="rowhead">1000</td><td class="num cell-bad">4.7e-04</td><td class="num cell-ok">2.6e-12</td><td class="num cell-ok">1.0e-12</td><td class="num cell-ok">2.6e-12</td><td class="num cell-ok">1.0e-12</td><td class="num cell-ok">5.5e-15</td><td class="num cell-warn">1.4e-08</td></tr>
+
+        <tr><td class="rowhead">256</td><td class="rowhead">1</td><td class="num cell-warn">5.9e-08</td><td class="num cell-ok">1.9e-14</td><td class="num cell-ok">1.9e-14</td><td class="num cell-ok">1.1e-14</td><td class="num cell-ok">1.1e-14</td><td class="num cell-ok">1.2e-14</td><td class="num cell-crit">1.0e+00</td></tr>
+        <tr><td class="rowhead">256</td><td class="rowhead">10</td><td class="num cell-warn">5.8e-06</td><td class="num cell-ok">3.1e-14</td><td class="num cell-ok">2.6e-14</td><td class="num cell-ok">1.7e-13</td><td class="num cell-ok">1.7e-13</td><td class="num cell-ok">1.8e-15</td><td class="num cell-warn">2.6e-08</td></tr>
+        <tr><td class="rowhead">256</td><td class="rowhead">50</td><td class="num cell-bad">1.3e-04</td><td class="num cell-ok">1.1e-14</td><td class="num cell-ok">1.1e-14</td><td class="num cell-ok">1.1e-14</td><td class="num cell-ok">1.1e-14</td><td class="num cell-ok">9.5e-15</td><td class="num cell-warn">2.2e-08</td></tr>
+        <tr><td class="rowhead">256</td><td class="rowhead">200</td><td class="num cell-bad">6.3e-04</td><td class="num cell-ok">5.0e-14</td><td class="num cell-ok">6.6e-14</td><td class="num cell-ok">5.0e-14</td><td class="num cell-ok">6.6e-14</td><td class="num cell-ok">2.4e-14</td><td class="num cell-warn">3.3e-09</td></tr>
+        <tr><td class="rowhead">256</td><td class="rowhead">1000</td><td class="num cell-bad">3.8e-04</td><td class="num cell-ok">2.2e-13</td><td class="num cell-ok">4.1e-13</td><td class="num cell-ok">2.2e-13</td><td class="num cell-ok">4.1e-13</td><td class="num cell-ok">5.1e-14</td><td class="num cell-warn">3.7e-09</td></tr>
+
+        <tr><td class="rowhead">1024</td><td class="rowhead">1</td><td class="num cell-ok">9.3e-10</td><td class="num cell-crit">NaN</td><td class="num cell-ok">1.9e-13</td><td class="num cell-bad">9.8e-04</td><td class="num cell-ok">9.3e-10</td><td class="num cell-crit">NaN</td><td class="num cell-warn">1.3e-08</td></tr>
+        <tr><td class="rowhead">1024</td><td class="rowhead">10</td><td class="num cell-warn">9.3e-08</td><td class="num cell-crit">NaN</td><td class="num cell-ok">3.0e-13</td><td class="num cell-bad">9.8e-04</td><td class="num cell-ok">1.6e-13</td><td class="num cell-crit">NaN</td><td class="num cell-bad">1.7e-07</td></tr>
+        <tr><td class="rowhead">1024</td><td class="rowhead">50</td><td class="num cell-warn">2.3e-06</td><td class="num cell-crit">NaN</td><td class="num cell-ok">3.6e-13</td><td class="num cell-bad">9.7e-04</td><td class="num cell-ok">2.0e-13</td><td class="num cell-crit">NaN</td><td class="num cell-bad">4.6e-06</td></tr>
+        <tr><td class="rowhead">1024</td><td class="rowhead">200</td><td class="num cell-bad">3.2e-05</td><td class="num cell-ok">2.7e-13</td><td class="num cell-ok">1.1e-13</td><td class="num cell-ok">1.0e-10</td><td class="num cell-ok">1.0e-10</td><td class="num cell-ok">2.0e-13</td><td class="num cell-crit">1.0e+00</td></tr>
+        <tr><td class="rowhead">1024</td><td class="rowhead">1000</td><td class="num cell-bad">1.7e-04</td><td class="num cell-ok">4.5e-16</td><td class="num cell-ok">2.2e-13</td><td class="num cell-ok">4.5e-16</td><td class="num cell-ok">2.2e-13</td><td class="num cell-ok">8.4e-15</td><td class="num cell-warn">1.7e-08</td></tr>
+
+        <tr><td class="rowhead">4096</td><td class="rowhead">1</td><td class="num cell-ok">1.5e-11</td><td class="num cell-crit">NaN</td><td class="num cell-ok">2.3e-12</td><td class="num cell-bad">2.4e-04</td><td class="num cell-ok">1.5e-11</td><td class="num cell-crit">NaN</td><td class="num cell-warn">1.5e-08</td></tr>
+        <tr><td class="rowhead">4096</td><td class="rowhead">10</td><td class="num cell-ok">1.5e-09</td><td class="num cell-crit">NaN</td><td class="num cell-ok">6.7e-14</td><td class="num cell-bad">2.4e-04</td><td class="num cell-ok">1.5e-09</td><td class="num cell-crit">NaN</td><td class="num cell-warn">1.2e-08</td></tr>
+        <tr><td class="rowhead">4096</td><td class="rowhead">50</td><td class="num cell-warn">3.6e-08</td><td class="num cell-crit">NaN</td><td class="num cell-ok">3.3e-13</td><td class="num cell-bad">2.4e-04</td><td class="num cell-ok">4.9e-13</td><td class="num cell-crit">NaN</td><td class="num cell-warn">5.8e-08</td></tr>
+        <tr><td class="rowhead">4096</td><td class="rowhead">200</td><td class="num cell-warn">5.8e-07</td><td class="num cell-crit">NaN</td><td class="num cell-ok">1.0e-12</td><td class="num cell-bad">2.4e-04</td><td class="num cell-ok">2.7e-13</td><td class="num cell-crit">NaN</td><td class="num cell-bad">1.1e-06</td></tr>
+        <tr><td class="rowhead">4096</td><td class="rowhead">1000</td><td class="num cell-bad">1.2e-05</td><td class="num cell-crit">NaN</td><td class="num cell-ok">4.4e-13</td><td class="num cell-bad">2.2e-04</td><td class="num cell-ok">1.9e-11</td><td class="num cell-crit">NaN</td><td class="num cell-warn">2.5e-05</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose">
+    <h3>Three readings</h3>
+    <p>
+      <strong>Sra's two steps are weakest at low dimension, not high.</strong> At <code>p = 3, κ = 10</code>
+      the two updates leave 1.9e-6 relative error where iterated Newton reaches 3.8e-12; the pattern
+      repeats at <code>p = 3, κ = 50</code> and <code>p = 16, κ = 10</code>. From <code>p = 64</code> upward
+      the two steps are at machine precision. This is consistent with the method's derivation, which
+      targets large <code>p</code> — but it does contradict the natural generalization from a
+      <code>κ = 50</code>-only grid, where the two steps look universally converged.
+    </p>
+    <p>
+      <strong>Banerjee's closed form is better than its reputation in one specific corner.</strong>
+      Its error is governed by <code>κ/p</code>, not by <code>p</code>: it improves from 7.1e-03 at
+      <code>p = 3, κ = 1</code> to 1.5e-11 at <code>p = 4096, κ = 1</code>, then degrades again to
+      1.2e-05 as κ climbs to 1000 at that same dimension. For high-dimensional, modestly concentrated
+      data it is accurate to ~1e-8 or better with no Bessel evaluation at all — which for embedding
+      analysis is a genuinely useful shortcut.
+    </p>
+    <p>
+      <strong>Direct likelihood maximization is not a solver.</strong> It hovers around 1e-8 in the
+      easy cases but fails outright twice — relative error 1.0 at <code>p = 256, κ = 1</code> and
+      <code>p = 1024, κ = 200</code> — because SciPy's bounded Brent search hits non-finite values on
+      an objective that is nearly flat near its maximum. Keep it as a validation cross-check, which is
+      what it was always intended for.
+    </p>
+  </div>
+</section>
+
+<section id="breakdown">
+  <h2><span class="sec-n">3</span>The SciPy breakdown, and why it matters</h2>
+  <div class="prose">
+    <p>
+      The <span class="cell-crit" style="padding:1px 5px;border-radius:3px">NaN</span> column above has a
+      single mechanical cause. <code>scipy.special.ive</code> is the exponentially scaled Bessel
+      function, and it underflows to <em>exactly zero</em> for order roughly 511 and above. Since
+      <code>scipy_log_iv</code> is built as <code>log(ive(ν, x)) + |x|</code>, a zero becomes
+      <code>-inf</code>, and then:
+    </p>
+    <pre class="code-block"><code>p=1024 κ=10   scipy_log_iv(511, 10) = -inf     scipy_log_iv(512, 10) = -inf
+              Sra two-step   → nan          (inf − inf in the ratio)
+              Newton         → 9.99         (bisection stalls; true 10.0)
+              CUSF two-step  → 10.000000000000    ✓
+
+p=4096 κ=1000 scipy_log_iv(2047, 1000) = -inf
+              Sra two-step   → nan
+              Newton         → 999.78       (relative error 2.2e-04)
+              CUSF two-step  → 1000.0000000000   ✓</code></pre>
+    <p>
+      Two consequences worth separating. The <strong>NaN</strong> is loud and safe: it announces
+      itself. The <strong>converged Newton stall</strong> is the dangerous one — it returns a
+      plausible-looking number, silently wrong in the third or fourth digit, because the safeguarded
+      solver correctly falls back to bisection when the Newton derivative is non-finite and then
+      exhausts its iteration budget without the score function ever becoming evaluable. A caller
+      checking only for NaN would not notice.
+    </p>
+    <div class="callout crit">
+      <strong>Practical rule.</strong> Every dimension that matters for embedding analysis —
+      768, 1024, 2048, 4096 — is past the point where SciPy's Bessel path can be trusted. Use
+      compiled CUSF <code>iv_log</code> or the pure-PyTorch translation for any work at
+      <code>p ≥ 1024</code>. This makes the numerics work load-bearing rather than incidental:
+      it is not an optimization, it is the difference between a result and a NaN.
+    </div>
+    <p>
+      This also constrains the literature. The original hyperspherical VAE implementation uses
+      SciPy's <code>ive</code> for its Bessel terms, which is fine at the dimensions that paper
+      reports (up to <code>m = 40</code>, order 19) and impossible at the dimensions worth trying next.
+    </p>
+  </div>
+</section>
+
+<section id="sampled">
+  <h2><span class="sec-n">4</span>Sampled data: numerical versus statistical error</h2>
+  <div class="prose">
+    <p>
+      Twenty independent datasets per cell, 10,000 samples each, each with a fresh random mean
+      direction so the sampler's rotation path is exercised rather than only the <code>e₁</code> case.
+      Every dataset is reduced once to <code>R̄</code> and the same values go to every method.
+      Splitting the error into two questions is the whole point of this study.
+    </p>
+    <h4>Numerical: median relative error against the MLE of the same sample</h4>
+  </div>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead><tr><th>p</th><th>κ</th><th>Banerjee</th><th>Sra (SciPy)</th><th>Sra (CUSF)</th><th>Newton (CUSF)</th><th>Direct likelihood</th></tr></thead>
+      <tbody>
+        <tr><td class="rowhead">3</td><td class="rowhead">10</td><td class="num cell-bad">3.7e-02</td><td class="num cell-bad">1.9e-06</td><td class="num cell-bad">1.9e-06</td><td class="num cell-ok">3.8e-12</td><td class="num cell-warn">1.5e-08</td></tr>
+        <tr><td class="rowhead">64</td><td class="rowhead">10</td><td class="num cell-bad">3.3e-04</td><td class="num cell-ok">9.5e-15</td><td class="num cell-ok">2.8e-15</td><td class="num cell-ok">2.8e-15</td><td class="num cell-warn">4.7e-08</td></tr>
+        <tr><td class="rowhead">256</td><td class="rowhead">50</td><td class="num cell-bad">1.3e-04</td><td class="num cell-ok">1.7e-14</td><td class="num cell-ok">1.3e-14</td><td class="num cell-ok">1.3e-14</td><td class="num cell-warn">4.0e-08</td></tr>
+        <tr><td class="rowhead">1024</td><td class="rowhead">10</td><td class="num cell-warn">1.9e-07</td><td class="num cell-crit">NaN</td><td class="num cell-ok">2.0e-13</td><td class="num cell-ok">1.9e-13</td><td class="num cell-bad">3.6e-07</td></tr>
+        <tr><td class="rowhead">1024</td><td class="rowhead">200</td><td class="num cell-bad">3.2e-05</td><td class="num cell-ok">1.2e-13</td><td class="num cell-ok">9.5e-14</td><td class="num cell-ok">1.0e-10</td><td class="num cell-crit">1.0e+00</td></tr>
+        <tr><td class="rowhead">4096</td><td class="rowhead">50</td><td class="num cell-warn">6.1e-08</td><td class="num cell-crit">NaN</td><td class="num cell-ok">5.4e-13</td><td class="num cell-ok">6.6e-13</td><td class="num cell-bad">1.1e-07</td></tr>
+        <tr><td class="rowhead">4096</td><td class="rowhead">1000</td><td class="num cell-bad">1.2e-05</td><td class="num cell-crit">NaN</td><td class="num cell-ok">2.0e-13</td><td class="num cell-ok">2.0e-11</td><td class="num cell-bad">2.5e-05</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="prose">
+    <p>
+      Same story as the population grid, which is the expected and reassuring result: solver error is
+      a property of <code>(p, κ)</code>, not of the sample.
+    </p>
+    <h4>Statistical: median relative error against the generating κ</h4>
+    <p>
+      Now the same run, scored against the κ that actually generated the data. These columns are
+      <em>identical across every accurate solver</em>, because what they measure is the estimation
+      problem rather than the arithmetic.
+    </p>
+  </div>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead><tr><th>p</th><th class="num">κ = 1</th><th class="num">κ = 10</th><th class="num">κ = 50</th><th class="num">κ = 200</th><th class="num">κ = 1000</th></tr></thead>
+      <tbody>
+        <tr><td class="rowhead">3</td><td class="num cell-bad">1.9e-02</td><td class="num cell-warn">6.3e-03</td><td class="num cell-warn">6.3e-03</td><td class="num cell-warn">6.3e-03</td><td class="num cell-warn">6.3e-03</td></tr>
+        <tr><td class="rowhead">16</td><td class="num cell-bad">2.5e-02</td><td class="num cell-warn">4.5e-03</td><td class="num cell-warn">3.2e-03</td><td class="num cell-ok">2.0e-03</td><td class="num cell-ok">2.1e-03</td></tr>
+        <tr><td class="rowhead">64</td><td class="num cell-crit">1.7e-01</td><td class="num cell-warn">4.8e-03</td><td class="num cell-warn">2.4e-03</td><td class="num cell-ok">1.6e-03</td><td class="num cell-ok">9.2e-04</td></tr>
+        <tr><td class="rowhead">256</td><td class="num cell-crit">1.8e+00</td><td class="num cell-bad">2.6e-02</td><td class="num cell-warn">3.2e-03</td><td class="num cell-ok">1.1e-03</td><td class="num cell-ok">5.5e-04</td></tr>
+        <tr><td class="rowhead">1024</td><td class="num cell-crit">9.3e+00</td><td class="num cell-crit">4.3e-01</td><td class="num cell-bad">2.0e-02</td><td class="num cell-ok">1.6e-03</td><td class="num cell-ok">5.6e-04</td></tr>
+        <tr><td class="rowhead">4096</td><td class="num cell-crit">4.0e+01</td><td class="num cell-crit">3.2e+00</td><td class="num cell-crit">2.9e-01</td><td class="num cell-bad">2.1e-02</td><td class="num cell-ok">1.0e-03</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout">
+    <strong>The dominant term.</strong> At <code>p = 4096, κ = 1</code> the estimate is wrong by a
+    factor of 40 with ten thousand samples, while every solver's <em>numerical</em> error in that
+    same cell is around 1e-12. Statistical error exceeds numerical error by roughly twelve orders of
+    magnitude. Any effort spent on the last few digits of solver precision is misallocated relative
+    to effort spent on sample-size design.
+  </div>
+  <div class="prose">
+    <p>
+      One curiosity worth not over-reading: at <code>p = 256, κ = 200</code> Banerjee's statistical
+      error (8.8e-04) is <em>lower</em> than the exact solvers' (1.1e-03). Its downward approximation
+      bias happens to partially cancel the upward finite-sample bias. That is a coincidence of this
+      cell, not a reason to prefer it.
+    </p>
+  </div>
+</section>
+
+<section id="reliability">
+  <h2><span class="sec-n">5</span>The reliability surface</h2>
+  <div class="prose">
+    <p>
+      The statistical table above raises the obvious design question: how much data does the
+      concentration MLE actually need? This study sweeps the sample count from 100 to 100,000 across
+      four dimensions and four concentrations, 4–16 replicates per cell, 507 seconds of sampling in
+      total. Only an accurate solver is used, since section 4 established they all agree.
+    </p>
+    <h4>Median relative error against the generating κ, by sample count</h4>
+  </div>
+
+  <div class="sev-legend">
+    <span class="key"><span class="box" style="background:var(--ok-bg)"></span>≤ 1% — usable</span>
+    <span class="key"><span class="box" style="background:var(--warn-bg)"></span>1–10%</span>
+    <span class="key"><span class="box" style="background:var(--bad-bg)"></span>10–100%</span>
+    <span class="key"><span class="box" style="background:var(--crit-bg)"></span>&gt; 100% — meaningless</span>
+  </div>
+
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>p</th><th>κ</th><th class="num">κ/p</th>
+          <th class="num">n = 100</th><th class="num">n = 1,000</th>
+          <th class="num">n = 10,000</th><th class="num">n = 100,000</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="rowhead">64</td><td class="rowhead">10</td><td class="num">0.16</td><td class="num cell-bad">2.0e-01</td><td class="num cell-warn">2.7e-02</td><td class="num cell-warn">5.6e-03</td><td class="num cell-ok">2.1e-03</td></tr>
+        <tr><td class="rowhead">64</td><td class="rowhead">50</td><td class="num">0.78</td><td class="num cell-warn">2.8e-02</td><td class="num cell-warn">3.6e-03</td><td class="num cell-ok">1.7e-03</td><td class="num cell-ok">5.4e-04</td></tr>
+        <tr><td class="rowhead">64</td><td class="rowhead">200</td><td class="num">3.1</td><td class="num cell-warn">1.9e-02</td><td class="num cell-warn">2.6e-03</td><td class="num cell-ok">1.7e-03</td><td class="num cell-ok">5.4e-04</td></tr>
+        <tr><td class="rowhead">64</td><td class="rowhead">1000</td><td class="num">15.6</td><td class="num cell-warn">1.7e-02</td><td class="num cell-warn">5.4e-03</td><td class="num cell-ok">6.4e-04</td><td class="num cell-ok">2.5e-04</td></tr>
+
+        <tr><td class="rowhead">256</td><td class="rowhead">10</td><td class="num">0.04</td><td class="num cell-crit">1.8e+00</td><td class="num cell-bad">2.7e-01</td><td class="num cell-bad">3.3e-02</td><td class="num cell-warn">4.4e-03</td></tr>
+        <tr><td class="rowhead">256</td><td class="rowhead">50</td><td class="num">0.20</td><td class="num cell-bad">1.3e-01</td><td class="num cell-warn">1.4e-02</td><td class="num cell-ok">1.9e-03</td><td class="num cell-ok">6.5e-04</td></tr>
+        <tr><td class="rowhead">256</td><td class="rowhead">200</td><td class="num">0.78</td><td class="num cell-warn">2.0e-02</td><td class="num cell-warn">2.9e-03</td><td class="num cell-ok">1.2e-03</td><td class="num cell-ok">4.5e-04</td></tr>
+        <tr><td class="rowhead">256</td><td class="rowhead">1000</td><td class="num">3.9</td><td class="num cell-warn">9.6e-03</td><td class="num cell-ok">1.5e-03</td><td class="num cell-ok">3.6e-04</td><td class="num cell-ok">1.3e-04</td></tr>
+
+        <tr><td class="rowhead">1024</td><td class="rowhead">10</td><td class="num">0.01</td><td class="num cell-crit">9.3e+00</td><td class="num cell-crit">2.3e+00</td><td class="num cell-bad">4.2e-01</td><td class="num cell-bad">4.6e-02</td></tr>
+        <tr><td class="rowhead">1024</td><td class="rowhead">50</td><td class="num">0.05</td><td class="num cell-crit">1.3e+00</td><td class="num cell-bad">1.9e-01</td><td class="num cell-warn">2.0e-02</td><td class="num cell-ok">2.1e-03</td></tr>
+        <tr><td class="rowhead">1024</td><td class="rowhead">200</td><td class="num">0.20</td><td class="num cell-bad">1.5e-01</td><td class="num cell-warn">1.4e-02</td><td class="num cell-ok">1.8e-03</td><td class="num cell-ok">4.9e-04</td></tr>
+        <tr><td class="rowhead">1024</td><td class="rowhead">1000</td><td class="num">0.98</td><td class="num cell-warn">1.9e-02</td><td class="num cell-warn">2.2e-03</td><td class="num cell-ok">4.4e-04</td><td class="num cell-ok">1.3e-04</td></tr>
+
+        <tr><td class="rowhead">4096</td><td class="rowhead">10</td><td class="num">0.002</td><td class="num cell-crit">4.0e+01</td><td class="num cell-crit">1.2e+01</td><td class="num cell-crit">3.2e+00</td><td class="num cell-bad">6.4e-01</td></tr>
+        <tr><td class="rowhead">4096</td><td class="rowhead">50</td><td class="num">0.01</td><td class="num cell-crit">7.3e+00</td><td class="num cell-crit">1.8e+00</td><td class="num cell-bad">3.0e-01</td><td class="num cell-bad">3.3e-02</td></tr>
+        <tr><td class="rowhead">4096</td><td class="rowhead">200</td><td class="num">0.05</td><td class="num cell-crit">1.3e+00</td><td class="num cell-bad">2.0e-01</td><td class="num cell-warn">2.0e-02</td><td class="num cell-ok">1.7e-03</td></tr>
+        <tr><td class="rowhead">4096</td><td class="rowhead">1000</td><td class="num">0.24</td><td class="num cell-warn">9.3e-02</td><td class="num cell-warn">9.6e-03</td><td class="num cell-ok">8.1e-04</td><td class="num cell-ok">2.8e-04</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose">
+    <p>
+      <strong>Dimension is not the problem; <code>κ/p</code> is.</strong> Reading the table by that
+      ratio rather than by <code>p</code> makes it collapse: <code>p = 4096, κ = 1000</code>
+      (<code>κ/p = 0.24</code>) needs only 1,000 samples for sub-1% accuracy, while
+      <code>p = 256, κ = 10</code> (<code>κ/p = 0.04</code>) needs 100,000 for the same. A high-dimensional
+      but well-concentrated fit is easy; a low-dimensional but diffuse one is hard.
+    </p>
+    <h4>Smallest tested sample count reaching each target</h4>
+  </div>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead><tr><th>p</th><th>κ</th><th class="num">κ/p</th><th class="num">n for 10%</th><th class="num">n for 1%</th><th class="num">n/p at 1%</th></tr></thead>
+      <tbody>
+        <tr><td class="rowhead">64</td><td class="rowhead">50</td><td class="num">0.78</td><td class="num cell-ok">100</td><td class="num cell-ok">1,000</td><td class="num">16</td></tr>
+        <tr><td class="rowhead">256</td><td class="rowhead">200</td><td class="num">0.78</td><td class="num cell-ok">100</td><td class="num cell-ok">1,000</td><td class="num">4</td></tr>
+        <tr><td class="rowhead">256</td><td class="rowhead">10</td><td class="num">0.04</td><td class="num cell-bad">10,000</td><td class="num cell-bad">100,000</td><td class="num">391</td></tr>
+        <tr><td class="rowhead">1024</td><td class="rowhead">1000</td><td class="num">0.98</td><td class="num cell-ok">100</td><td class="num cell-ok">1,000</td><td class="num">1</td></tr>
+        <tr><td class="rowhead">1024</td><td class="rowhead">50</td><td class="num">0.05</td><td class="num cell-bad">10,000</td><td class="num cell-bad">100,000</td><td class="num">98</td></tr>
+        <tr><td class="rowhead">1024</td><td class="rowhead">10</td><td class="num">0.01</td><td class="num cell-bad">100,000</td><td class="num cell-crit">&gt; 100,000</td><td class="num">—</td></tr>
+        <tr><td class="rowhead">4096</td><td class="rowhead">1000</td><td class="num">0.24</td><td class="num cell-ok">100</td><td class="num cell-ok">1,000</td><td class="num">0.2</td></tr>
+        <tr><td class="rowhead">4096</td><td class="rowhead">200</td><td class="num">0.05</td><td class="num cell-bad">10,000</td><td class="num cell-bad">100,000</td><td class="num">24</td></tr>
+        <tr><td class="rowhead">4096</td><td class="rowhead">50</td><td class="num">0.01</td><td class="num cell-crit">&gt; 100,000</td><td class="num cell-crit">&gt; 100,000</td><td class="num">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose">
+    <p>
+      Above <code>κ/p ≈ 0.2</code>, roughly <code>n = 10–25 p</code> samples buy 1% accuracy. Below
+      <code>κ/p ≈ 0.05</code>, even 100,000 samples do not.
+    </p>
+    <h3>The bias runs in the same direction as the claim</h3>
+    <p>
+      The signed bias is <strong>positive in essentially every cell</strong>, and it grows precisely
+      as concentration falls. The sample mean's norm is inflated by finite-sample noise, so
+      <code>R̄</code> is biased up, so <code>κ̂</code> is biased up. At <code>p = 4096, κ = 10,
+      n = 100</code> the median signed bias is <code>+40.4</code> in relative terms.
+    </p>
+    <div class="callout crit">
+      <strong>This is the methodological crux.</strong> Anyone fitting a vMF to embeddings wants to
+      claim they are "more concentrated than uniform." That is exactly the direction the artifact
+      points. So a matched null is not good practice, it is the only thing separating the measurement
+      from the artifact: draw <code>n</code> uniform unit vectors in <code>ℝ^p</code>, run the same
+      estimator, and report the observed value against that null distribution — whose mean is
+      <em>not</em> zero. Building it over an <code>(n, p)</code> grid with enough replicates for
+      percentile intervals is millions of sampling calls, which is where the sampler's throughput
+      stops being a convenience and becomes a precondition.
+    </div>
+    <h3>What this permits, concretely</h3>
+    <ul>
+      <li><strong>GPT-2 / BERT scale</strong>, <code>p = 768</code> with <code>V = 50,257</code>: <code>n/p ≈ 65</code>, so κ must exceed roughly 75 for 1% accuracy.</li>
+      <li><strong>LLaMA scale</strong>, <code>p = 4096</code> with <code>V = 32,000</code>: <code>n/p ≈ 8</code>, so κ must exceed roughly 800. If embedding concentration is actually near 50, the estimate carries about 30% error.</li>
+    </ul>
+    <p>
+      This also favors fitting whole embedding matrices (<code>n = V</code>) over per-token
+      contextual fits, where <code>n</code> is the occurrence count and exposure is far worse — a
+      token seen 20 times and one seen 2 million times are not comparable without
+      frequency-stratified nulls.
+    </p>
+  </div>
+</section>
+
+<section id="throughput">
+  <h2><span class="sec-n">6</span>Throughput</h2>
+  <div class="prose">
+    <p>
+      Estimates per second at dimension 256, float64, Apple M3 Max CPU. Sample generation and the
+      reduction to <code>R̄</code> are excluded; inputs are precomputed and identical across methods.
+    </p>
+  </div>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead><tr><th>Method</th><th class="num">batch 1</th><th class="num">64</th><th class="num">4,096</th><th class="num">65,536</th><th class="num">1,048,576</th></tr></thead>
+      <tbody>
+        <tr><th>Banerjee (NumPy)</th><td class="num">51,062</td><td class="num">3,639,878</td><td class="num">118,152,715</td><td class="num">267,859,032</td><td class="num">290,032,431</td></tr>
+        <tr><th>Banerjee (Torch)</th><td class="num">67,990</td><td class="num">4,388,370</td><td class="num">191,993,911</td><td class="num">185,763,854</td><td class="num">1,214,508,164</td></tr>
+        <tr><th>Sra two-step (CUSF)</th><td class="num">12,959</td><td class="num">682,063</td><td class="num">3,764,561</td><td class="num">4,523,155</td><td class="num">5,322,692</td></tr>
+        <tr><th>Sra two-step (SciPy)</th><td class="num">13,817</td><td class="num">303,618</td><td class="num">467,733</td><td class="num">474,214</td><td class="num">476,394</td></tr>
+        <tr><th>Converged Newton (CUSF)</th><td class="num">4,261</td><td class="num">247,702</td><td class="num">2,189,008</td><td class="num">2,401,953</td><td class="num">3,386,665</td></tr>
+        <tr><th>Converged Newton (SciPy)</th><td class="num">7,295</td><td class="num">185,754</td><td class="num">309,950</td><td class="num">315,569</td><td class="num">316,959</td></tr>
+        <tr><th>SciPy Brent</th><td class="num">17,404</td><td class="num">24,504</td><td class="num">24,623</td><td class="num">—</td><td class="num">—</td></tr>
+        <tr><th>Direct likelihood</th><td class="num">5,296</td><td class="num">5,451</td><td class="num">5,326</td><td class="num">—</td><td class="num">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="prose">
+    <p>
+      CUSF's advantage over SciPy's log-Bessel path grows with batch size — 2.2× at 64, 8.0× at 4,096,
+      9.5× at 65,536, <strong>11.2× at 2<sup>20</sup></strong> for the two-step method, and 10.7× for
+      converged Newton. Against the SciPy Brent reference the two-step method is 216× faster.
+    </p>
+    <p>
+      <strong>At batch 1, SciPy is marginally faster.</strong> 13,817 against 12,959 estimates per
+      second, because the device path is dominated by tensor construction and dispatch overhead
+      rather than arithmetic. Worth stating plainly: this benchmark does not support a claim that the
+      device estimators are universally faster. They win from about batch 64 upward, and the crossover
+      is where it belongs for a vectorized implementation.
+    </p>
+    <p>
+      Banerjee's closed form is in a different regime entirely — 290M estimates/s in NumPy and 1.2B/s
+      in Torch at the largest batch, since it evaluates no Bessel function at all. Combined with its
+      accuracy in the high-<code>p</code>/low-<code>κ</code> corner from section 2, it is the right
+      default for building large null tables where a small, known bias is acceptable.
+    </p>
+    <h3>Cost of generating this study's own data</h3>
+    <p>
+      Sampler throughput speedup over the SciPy reference, measured on the random mean directions
+      this study actually used (2,000 samples × 3 replicates per cell):
+    </p>
+  </div>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead><tr><th>Dimension</th><th class="num">3</th><th class="num">16</th><th class="num">64</th><th class="num">256</th><th class="num">1,024</th><th class="num">4,096</th></tr></thead>
+      <tbody>
+        <tr><th>NumPy Householder</th><td class="num">2.3×</td><td class="num">2.1×</td><td class="num">3.4×</td><td class="num">8.0×</td><td class="num">28.8×</td><td class="num">135.9×</td></tr>
+        <tr><th>Torch Householder</th><td class="num">2.0×</td><td class="num">1.3×</td><td class="num">2.1×</td><td class="num">5.1×</td><td class="num">19.2×</td><td class="num">85.9×</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout warn">
+    <strong>Do not quote these as the headline sampler speedups.</strong> These are small-batch
+    Apple M3 Max timings measuring this study's data-generation cost. The project's calibrated
+    figures — 126.97× (NumPy) and 99.01× (Torch) at dimension 4096 — come from two-second-target
+    cluster runs on AMD EPYC 7742 and remain the numbers of record.
+  </div>
+</section>
+
+<section id="papers">
+  <h2><span class="sec-n">7</span>The two papers, and where they meet this code</h2>
+
+  <h3>Hyperspherical VAE (Davidson et al., UAI 2018)</h3>
+  <div class="prose">
+    <p>
+      The latent lives on <code>S^(m−1)</code>. The prior becomes uniform on the sphere — which is
+      exactly <code>vMF(μ, κ=0)</code> — and the posterior becomes <code>vMF(μ(x), κ(x))</code>, with
+      <strong>κ learned per datapoint</strong>. That last point is their contribution relative to
+      prior work: Guu et al. (2018) used a fixed global κ, which they argue reduces to adding vMF
+      noise to a deterministic encoder, since the KL then never varies.
+    </p>
+    <p>The KL against the uniform prior depends <em>only</em> on κ:</p>
+    <div class="equation">KL = κ·A_m(κ) + (m/2 − 1)·log κ − (m/2)·log(2π) − log I_(m/2−1)(κ)
+     + (m/2)·log π + log 2 − log Γ(m/2)</div>
+    <p>
+      Because <code>I_ν</code> is not autodiff-able, they hand-derive the κ-gradient, and it is built
+      from Bessel ratios:
+    </p>
+    <div class="equation">∇_κ KL = ½κ·( I_(m/2+1)/I_(m/2−1) − I_(m/2)·(I_(m/2−2) + I_(m/2))/I_(m/2−1)² + 1 )</div>
+    <div class="callout">
+      <strong>The bridge.</strong> <code>A_m(κ) = I_(m/2)(κ)/I_(m/2−1)(κ)</code> in that KL is
+      <em>precisely</em> the quantity <code>bessel_ratio_from_logs_torch</code> already computes for
+      concentration estimation. The estimation half of this repository and the generative half of
+      that paper need the same function. Every term in the gradient above is a ratio of Bessel
+      functions expressible through <code>log_iv</code> differences.
+    </div>
+    <p>
+      Their sampler is Ulrich (1984): draw <code>v</code> uniform on the sub-sphere, draw the
+      tangent coordinate <code>ω ∝ exp(κω)(1−ω²)^((m−3)/2)</code> by rejection, then map
+      <code>e₁ → μ</code> with a Householder reflection. That is the same algorithm as
+      <code>src/vmf_torch_hh.py</code>, including the <code>m = 3</code> closed form, and their
+      appendix even notes the reflection can be applied in <code>O(m)</code> by rearranging terms —
+      the rank-one update this repo implements as a fused <code>addmm_</code>.
+    </p>
+    <p>
+      Their reported acceptance rates run 1.00–1.46 proposals per accepted sample and
+      <em>improve</em> with dimension, since rejection applies only to a univariate density. That
+      table is their <strong>entire</strong> statement on computational cost: no wall-clock, no
+      batching, no GPU. Which is the gap this repository's benchmark fills.
+    </p>
+    <p>
+      Results: S-VAE wins reconstruction error at every dimension tested, but its KL grows much
+      faster with <code>m</code> (7.3 → 33.5 over <code>m = 2 → 40</code>, against 7.2 → 23.8 for the
+      Gaussian), so the likelihood advantage evaporates by <code>m = 20</code> and reverses at
+      <code>m = 40</code>. They attribute this to <strong>vanishing sphere surface area</strong>,
+      which peaks at <code>m = 7</code> and tends to zero. Their stated open question is whether a
+      learned latent radius would fix it.
+    </p>
+  </div>
+
+  <h3>nGPT (Loshchilov et al., ICLR 2025)</h3>
+  <div class="prose">
+    <p>
+      Every embedding and weight matrix is normalized along the embedding dimension after each step;
+      all LayerNorm/RMSNorm layers are removed. Matrix–vector products become cosine similarities in
+      <code>[−1,1]</code>, weight decay becomes redundant, and LR warmup is dropped. Block updates
+      become a normalized linear interpolation:
+    </p>
+    <div class="equation">h ← Norm( h + α_A ⊙ (Norm(ATTN(h)) − h) )
+h ← Norm( h + α_M ⊙ (Norm(MLP(h)) − h) )</div>
+    <p>
+      The <code>α</code> vectors are "eigen learning rates" — diagonal entries of a learnable
+      variable-metric matrix, read literally as each block's per-coordinate contribution. Networks
+      learn modest steps, 20–30%, with MLP consistently above attention. Reported speedups are
+      roughly 4×, 10×, and 20× in tokens-to-equal-loss at 1k, 4k, and 8k context. The honest caveat
+      they state in a footnote: per-step time is 60–80% higher, because normalizations are unfused,
+      so wall-clock gain is materially below token gain.
+    </p>
+    <div class="callout">
+      <strong>nGPT never models a distribution on the sphere.</strong> No vMF, no density, no KL, no
+      sampling. Its geometry diagnostics are three ad-hoc proxies: vector norms, weight-matrix
+      condition numbers, and pairwise dot-product histograms. It observes that "embeddings are not
+      uniformly distributed across the hypersphere but instead form clusters" — and stops. Fitting a
+      vMF and reporting a null-calibrated <code>κ̂</code> is a better-specified version of that same
+      analysis, and cheaper: <code>O(V·d)</code> for <code>R̄</code> against <code>O(V²)</code> for a
+      pairwise histogram at <code>V = 32,000</code>.
+    </div>
+    <h3>The strongest single lead</h3>
+    <p>
+      nGPT computes logits as <code>z = E_output·h · s_z</code>, where <code>s_z</code> is a learned
+      scaling factor whose mean converges to about <strong>60.8</strong>, and whose Table 4 shows it
+      is by far their most sensitivity-critical scaling parameter — mis-setting it costs 3.12%
+      validation loss. But <code>E_output·h</code> is a vector of cosines between unit vectors, so
+      <code>softmax(s_z · E_output h)</code> <em>is</em> a mixture-of-vMF likelihood with a shared
+      concentration. <code>s_z</code> is a concentration parameter that the paper does not recognize
+      as one.
+    </p>
+    <div class="callout warn">
+      <strong>Correction — the obvious version of this test measures the wrong thing.</strong> The
+      tempting experiment is to fit a vMF to the <em>rows of</em> <code>E_output</code> and compare
+      its <code>κ̂</code> to <code>s_z</code>. That is vacuous. Under the NormFace identity,
+      <code>softmax(s_z·⟨ĥ, ŵ⟩)</code> is a vMF <em>conditional</em> <code>p(ŵ | ĥ)</code>, so
+      <code>s_z</code> is the concentration of tokens <em>around a given hidden state</em> — not the
+      spread of the unembedding prototypes <em>among themselves</em>. A well-trained unembedding
+      matrix should be close to uniform on the sphere, giving <code>κ_true ≈ 0</code> and an
+      uninformative comparison whichever way it lands.
+    </div>
+    <p>
+      The test that actually probes the identity: for many hidden states <code>ĥ</code>, take the
+      emitted token's <code>ŵ</code>, form the angular residual around <code>ĥ</code>, and estimate
+      the concentration of those residuals pooled over ~10⁷ tokens. That is a genuine test of
+      <code>s_z</code>, and at <code>n/p ≈ 10⁴</code> it is comfortably estimable.
+    </p>
+    <p>
+      Either way the statistical power is not the binding constraint, which is what the following
+      simulation establishes — at <code>p = 1024</code> and a true concentration of 60.8, a sample
+      the size of a vocabulary recovers it to well under 1%:
+    </p>
+    <pre class="code-block"><code>p = 1024, κ = 60.8  →  population R̄ = 0.05917
+
+  n =  32,000   κ̂ =  61.06 ± 0.15   (0.43% relative error)
+  n =  50,257   κ̂ =  60.98 ± 0.12   (0.30%)
+  n = 128,256   κ̂ =  60.88 ± 0.10   (0.13%)</code></pre>
+    <p>
+      So a null result on the <em>correctly specified</em> test would be informative rather than an
+      artifact of insufficient data.
+    </p>
+  </div>
+
+  <h3>Related work worth knowing</h3>
+  <div class="prose">
+    <ul>
+      <li><strong>Banerjee et al. (2005)</strong>, JMLR 6:1345 — origin of the closed form, and of the vMF mixture EM whose M-step <em>is</em> κ estimation.</li>
+      <li><strong>Davidson et al. (2019)</strong>, arXiv:1910.02912 — the direct follow-up, which names the "hyperspherical bottleneck" as a consequence of the <em>scalar</em> κ and fixes it with a Cartesian product of spheres, one κ per factor. Static MNIST: <code>S^40</code> LL −96.32 → 4-way product −92.65.</li>
+      <li><strong>De Cao &amp; Aziz (2020)</strong>, arXiv:2006.04437 — the Power Spherical distribution, motivated <em>explicitly</em> by vMF rejection sampling being "slow and numerically unstable in high dimensions." The main competitor to any fast-vMF claim, and the most interesting thing to try to falsify.</li>
+      <li><strong>SphereAR</strong>, arXiv:2509.24335 — hyperspherical latents for autoregressive image generation, ImageNet FID 1.34. Evidence that spherical latents in modern generative models are live rather than historical.</li>
+      <li>On κ estimation at <code>p</code> in the thousands with realistic <code>n</code>, the literature is thin and mostly pre-2015 (Schou 1978, Tanabe et al. 2007, Hornik &amp; Grün 2014). That is an open niche, and it is exactly the regime LLM embedding matrices occupy.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="gaps">
+  <h2><span class="sec-n">8</span>Two capability gaps to close first</h2>
+  <div class="prose">
+    <p>Most of the program below depends on one or both of these.</p>
+  </div>
+  <div class="exp-grid">
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">GAP A</span><p class="exp-title">Per-row batched (μᵢ, κᵢ) sampling</p></div>
+      <p><code>TorchvMFHH</code> takes a scalar κ and a single μ. Every VAE and per-token-noise
+      experiment needs <code>(B, d)</code> means with <code>(B,)</code> concentrations in one call.
+      The envelope constants <code>a, b, d</code> become <code>(B,)</code> tensors, the rejection loop
+      needs mask-and-refill rather than compaction, and the Householder update becomes row-wise.</p>
+      <div class="badges"><span class="badge">1–2 days</span><span class="badge gap">unblocks groups B, C, D</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">GAP B</span><p class="exp-title">Stable differentiable vMF KL at large m</p></div>
+      <p>The S-VAE KL and its κ-gradient need four Bessel ratios plus
+      <code>log I_(m/2−1)</code>, all expressible through <code>log_iv</code> differences. The
+      original implementation uses SciPy's <code>ive</code> and cannot reach <code>m</code> in the
+      thousands — see section 3. A <code>torch.autograd.Function</code> with an analytic backward is
+      <em>what makes an m = 1024 S-VAE possible at all</em>.</p>
+      <div class="badges"><span class="badge">~1 day</span><span class="badge gap">unblocks group C</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="experiments">
+  <h2><span class="sec-n">9</span>Experiment program</h2>
+  <div class="prose">
+    <p>
+      Twenty-seven experiments in five groups. Groups E and A need no training at all; only C and D
+      require training runs, and only D needs multiple GPUs.
+    </p>
+  </div>
+
+  <h3>Group E — methodology, no model required</h3>
+  <div class="exp-grid">
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">E1</span><p class="exp-title">Extend the acceptance-rate table</p></div>
+      <p>Theirs is a 5×9 grid from 1,000 Monte Carlo samples, stopping at <code>d = 100</code>. Redo
+      at 10⁶⁺ samples, extend to <code>d = 8192</code> and <code>κ = 10⁶</code>, and add the number
+      they omit: wall-clock per <em>accepted</em> sample. A 1.4× rejection overhead is irrelevant
+      next to <code>O(nd)</code> Householder cost at <code>d = 4096</code>. Also verify the
+      <code>b</code>-underflow series fallback, which activates exactly in the high-κ regime and the
+      paper never discusses.</p>
+      <div class="badges"><span class="badge infer">no model</span><span class="badge">~1 day</span><span class="badge pick">start here</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">E2</span><p class="exp-title">The (n, p) bias surface</p></div>
+      <p>Map bias, MSE, and the null distribution of <code>κ̂</code> over <code>p</code> 2–4096,
+      <code>n</code> 10–10⁶, <code>κ</code> 0–10⁴, with enough replicates for percentile intervals.
+      Ship it as a lookup table. <em>Every experiment in groups A and B needs this null</em>, and it is
+      millions of sampling calls by construction — the clearest case where sampler throughput is a
+      precondition.</p>
+      <div class="badges"><span class="badge infer">no model</span><span class="badge">2–3 days</span><span class="badge pick">start here</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">E3</span><p class="exp-title">Bias-corrected κ̂ for high dimension</p></div>
+      <p>From E2's surface, fit and validate a correction in the spirit of the classical
+      nearly-unbiased estimators but for <code>p ≫ 1</code>. Deliverable: an estimator that
+      <em>takes the sample size as an argument</em>, which none of the five current methods do.
+      Highest ratio of novelty to compute cost in the program.</p>
+      <div class="badges"><span class="badge infer">no model</span><span class="badge">~1 week</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">E4</span><p class="exp-title">Gradient variance of the S-VAE reparameterization</p></div>
+      <p>The <code>g_cor</code> correction term is score-function-style and the suspected variance
+      culprit at large <code>m</code> — the stated reason Power Spherical exists. Measure the
+      κ-gradient variance for <code>g_rep + g_cor</code> against <code>g_rep</code> alone against
+      Power Spherical's pathwise gradient, over <code>m</code> 2–4096. Synthetic objective, no model.
+      <em>Run before C6.</em></p>
+      <div class="badges"><span class="badge infer">no model</span><span class="badge">~2 days</span></div>
+    </div>
+  </div>
+
+  <h3>Group A — inference-only κ analysis of released checkpoints</h3>
+  <div class="exp-grid">
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">A1</span><p class="exp-title">vMF atlas of embedding matrices</p></div>
+      <p>Fit vMF to rows of <code>E_input</code> and <code>E_output</code> across GPT-2, Pythia,
+      LLaMA-2/3, Qwen. Report <code>R̄</code>, <code>κ̂</code> from all three fast estimators, and
+      excess over the matched null, against <code>d_model</code> and parameter count.</p>
+      <div class="badges"><span class="badge infer">inference only</span><span class="badge">~1 day</span><span class="badge gap">needs E2</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">A2</span><p class="exp-title">Layerwise κ̂ of hidden states</p></div>
+      <p>Capture <code>h</code> at every layer over a fixed corpus slice, fit per layer, pooled and
+      grouped by token id. Tests nGPT's central metaphor — each layer contributes a displacement on
+      the sphere with <code>α ≈ 0.2–0.3</code> — which predicts a smooth monotone <code>κ̂</code>
+      trajectory in a normalized model against a jumpier one in a standard GPT. <em>The paper never
+      measures this.</em></p>
+      <div class="badges"><span class="badge infer">inference only</span><span class="badge">1–2 days</span><span class="badge pick">high value</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">A3</span><p class="exp-title">Per-token κ̂ as a lexical statistic</p></div>
+      <p>Per vocabulary item, collect contextual embeddings and correlate <code>κ̂</code> against
+      unigram frequency, WordNet sense count, part of speech, whole-word vs fragment, and next-token
+      entropy. Hypothesis: an unsupervised polysemy detector. Requires frequency-stratified nulls —
+      see section 5.</p>
+      <div class="badges"><span class="badge infer">inference only</span><span class="badge">~1 day</span><span class="badge gap">needs E2</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">A4</span><p class="exp-title">κ̂ as an attention-head diagnostic</p></div>
+      <p>Recompute nGPT's condition-number figure with <code>κ̂</code> of the row-normalized per-head
+      <code>W_q</code>, <code>W_k</code>, <code>W_v</code>, correlated against condition number and
+      stable rank. Either it tracks conditioning — then it is cheaper than an SVD and comparable
+      across dimensions — or it measures something orthogonal, which is more interesting.</p>
+      <div class="badges"><span class="badge infer">inference only</span><span class="badge">~1 day</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">A5</span><p class="exp-title">Isotropy literature reconciliation</p></div>
+      <p>The embedding-anisotropy literature uses average cosine similarity, IsoScore, and
+      participation ratios. A null-calibrated <code>κ̂</code> is a principled replacement. Reproduce
+      3–4 published findings and check which survive bias correction. <em>Given that the bias points
+      the same way as the claim, some published anisotropy may be R̄ sampling noise.</em></p>
+      <div class="badges"><span class="badge infer">inference only</span><span class="badge">2–3 days</span><span class="badge gap">needs E2</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">A6</span><p class="exp-title">Mixture-of-vMF fit, per-cluster κ̂</p></div>
+      <p>nGPT asserts embeddings "form clusters." Test it: fit a <code>k</code>-component vMF mixture,
+      sweep <code>k</code>, model-select on held-out likelihood using exact
+      <code>log C_m(κ)</code>. The M-step <em>is</em> κ estimation, once per component per iteration,
+      and the E-step needs <code>log C_m</code> at <code>m</code> in the thousands. This is where fast
+      batched estimation becomes load-bearing rather than decorative.</p>
+      <div class="badges"><span class="badge infer">inference only</span><span class="badge">2–3 days</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">A7</span><p class="exp-title">κ̂ along a training trajectory</p></div>
+      <p>Pythia and OLMo release ~150 intermediate checkpoints. Plot <code>κ̂</code> of embeddings and
+      hidden states against step and tokens. Power law, saturation, and does saturation coincide with
+      the loss knee? nGPT's <code>s_z</code> mean grows with tokens; an analogous <code>κ̂</code>
+      growth is the geometry-side counterpart.</p>
+      <div class="badges"><span class="badge infer">inference only</span><span class="badge">~2 days</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">A8</span><p class="exp-title">Cross-model comparability note</p></div>
+      <p><code>κ̂</code> is dimension-aware where raw cosine statistics are not: the same
+      <code>R̄</code> implies very different κ at <code>p = 768</code> versus <code>p = 4096</code>.
+      Show concretely that ranking models by mean pairwise cosine gives a different and wrong
+      ordering. Small and clean.</p>
+      <div class="badges"><span class="badge infer">inference only</span><span class="badge">~1 day</span></div>
+    </div>
+  </div>
+
+  <h3>Group B — robustness and vMF noise injection</h3>
+  <div class="exp-grid">
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">B1</span><p class="exp-title">vMF noise as an inference-time robustness knob</p></div>
+      <p>At layer <code>ℓ</code>, replace <code>h</code> with a draw from
+      <code>vMF(h/‖h‖, κ)</code> and continue the forward pass. Sweep κ from 10⁵ down to 10.
+      <em>On a normalized residual stream, Gaussian noise is the wrong geometry</em> — it changes the
+      norm, and post-<code>Norm</code> its angular magnitude is dimension-dependent. vMF gives one
+      interpretable dial, and <code>E[μᵀz] = A_p(κ)</code> converts κ to a mean angular displacement
+      in closed form using existing code.</p>
+      <div class="badges"><span class="badge infer">inference only</span><span class="badge">2–3 days</span><span class="badge gap">needs Gap A</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">B2</span><p class="exp-title">Calibrate the noise dial from the data</p></div>
+      <p>Rather than sweeping blindly, estimate <code>κ̂_ℓ</code> per layer from A2 and inject at
+      <code>c·κ̂_ℓ</code>, so the perturbation is scale-matched to each layer's own geometry. Report
+      the robustness/accuracy Pareto frontier against uncalibrated injection. <em>The tightest single
+      demonstration that the estimator and the sampler compose.</em></p>
+      <div class="badges"><span class="badge infer">inference only</span><span class="badge">~1 day</span><span class="badge gap">needs Gap A, A2</span><span class="badge pick">high value</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">B3</span><p class="exp-title">Is κ̂ an adversarial-input detector?</p></div>
+      <p>Compare per-layer <code>κ̂</code> for adversarial, jailbreak, and prompt-injection inputs
+      against clean batches, plus the within-sequence version across token positions. AUROC against
+      max-softmax, Mahalanobis, and energy baselines. <code>κ̂</code> is one scalar per layer per
+      sequence — cheap enough for online use, unlike a Mahalanobis distance needing a
+      <code>d×d</code> covariance at <code>d = 4096</code>.</p>
+      <div class="badges"><span class="badge infer">inference only</span><span class="badge">~2 days</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">B4</span><p class="exp-title">Randomized smoothing on the sphere</p></div>
+      <p>Cohen et al.-style certified robustness with vMF smoothing instead of Gaussian, yielding a
+      geodesic rather than <code>ℓ₂</code> certificate; the Neyman–Pearson argument should go through
+      since vMF is monotone in <code>μᵀz</code>. Smoothing needs 10²–10⁴ samples <em>per input</em>,
+      so at <code>d = 4096</code> throughput is the difference between a real experiment and a toy.
+      Budget time for the multi-class certificate derivation.</p>
+      <div class="badges"><span class="badge infer">inference only</span><span class="badge">3–5 days</span><span class="badge gap">needs Gap A</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">B5</span><p class="exp-title">Adversarial training with vMF augmentation</p></div>
+      <p>Fine-tune a small LM or ViT with vMF noise at a normalized layer, κ annealed, against
+      Gaussian-noise augmentation and PGD at matched compute. The training-time sequel to B1/B2.</p>
+      <div class="badges"><span class="badge train">needs training</span><span class="badge">~1 week</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">B6</span><p class="exp-title">nGPT vs GPT under matched angular perturbation</p></div>
+      <p>nGPT claims better length extrapolation and well-conditioned matrices; whether it is more
+      robust to representation-space perturbation is untested. Train a small nGPT and a matched GPT,
+      then apply the B1 protocol to both. Self-contained question: <em>does spherical
+      parameterization confer angular robustness, or only optimization speed?</em></p>
+      <div class="badges"><span class="badge train">needs training</span><span class="badge">1–2 weeks</span></div>
+    </div>
+  </div>
+
+  <h3>Group C — recreating and extending the hyperspherical VAE</h3>
+  <div class="exp-grid">
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">C1</span><p class="exp-title">Faithful S-VAE reproduction</p></div>
+      <p>Dynamically binarized MNIST, MLP [256,128]/[128,256], Adam 1e-3, batch 64, 100-epoch linear
+      KL warm-up, LL by 500-sample importance weighting, <code>d ∈ {2,5,10,20,40}</code>, 10 runs.
+      Targets: <code>d=2</code> LL −132.50±0.73; <code>d=40</code> LL −90.87±0.34 (S) against
+      −88.93±0.30 (N). Minutes per run, and the validation harness for both gaps.</p>
+      <div class="badges"><span class="badge train">needs training</span><span class="badge">1–2 days</span><span class="badge pick">prerequisite</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">C2</span><p class="exp-title">Push past the reported dimension wall</p></div>
+      <p>They stop at <code>d = 40</code>, attributing degradation above <code>m ≈ 20</code> to
+      vanishing surface area. With both gaps closed, extend to <code>d ∈ {64…1024}</code> and measure
+      LL, reconstruction, KL, the distribution of learned <code>κ(x)</code>, and observed acceptance
+      rate. Three separable predictions: acceptance <em>improves</em> with <code>d</code> per their
+      own Table 5, so it is not a sampling-cost problem; their KL grows 7.3→33.5 over
+      <code>d = 2→40</code>, so check whether it simply swamps reconstruction; and check whether
+      learned κ saturates against a numerical ceiling.</p>
+      <div class="badges"><span class="badge train">needs training</span><span class="badge">3–5 days</span><span class="badge gap">needs Gaps A+B</span><span class="badge pick">high upside</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">C3</span><p class="exp-title">Round-trip validation</p></div>
+      <p>Sample <code>n</code> latents per <code>x</code> from <code>q(z|x)</code> with the fast
+      sampler, re-estimate with Sra's two steps, compare against the encoder's <code>κ(x)</code>.
+      Validates sampler, estimator, and reparameterization gradient at once, and yields a reusable
+      calibration curve for how many samples each <code>d</code> needs.</p>
+      <div class="badges"><span class="badge train">needs C1</span><span class="badge">~1 day</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">C4</span><p class="exp-title">Does the aggregate posterior match the prior?</p></div>
+      <p>The S-VAE's pitch is that the uniform prior is truly uninformative. Test the consequence:
+      pool <code>z</code> over the training set, fit a vMF to the aggregate posterior, and check
+      whether <code>κ̂_agg</code> is distinguishable from the matched uniform null. Sweep
+      <code>d</code>; fit a mixture to detect prior holes. The paper shows only projection scatter
+      plots.</p>
+      <div class="badges"><span class="badge train">needs C1</span><span class="badge">1–2 days</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">C5</span><p class="exp-title">Fixed versus learned κ, quantified</p></div>
+      <p>Their criticism of a fixed global κ is theoretical — constant KL is never optimized. Run the
+      missing ablation: learned <code>κ(x)</code> against a swept fixed global κ at every
+      <code>d</code> up to 1024, measuring LL and the entropy of the learned κ distribution. If
+      learned κ collapses to nearly constant at large <code>d</code>, the bottleneck is "the extra
+      parameter stops paying," not "the sphere runs out of room."</p>
+      <div class="badges"><span class="badge train">needs training</span><span class="badge">~2 days</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">C6</span><p class="exp-title">vMF versus Power Spherical at matched compute</p></div>
+      <p>Power Spherical exists specifically because vMF sampling was "slow and numerically unstable
+      in high dimensions." Re-run that comparison honestly: same S-VAE, same <code>d</code> grid, swap
+      only the posterior family, report LL <em>and</em> wall-clock per epoch <em>and</em> gradient
+      variance. <em>The most directly publishable item here</em> — a specific claim in the literature
+      that this repository's engineering may falsify. Either outcome is clean.</p>
+      <div class="badges"><span class="badge train">needs training</span><span class="badge">~3 days</span><span class="badge gap">run E4 first</span><span class="badge pick">most publishable</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">C7</span><p class="exp-title">Product-of-spheres S-VAE</p></div>
+      <p>Implement the <code>S^M0 × … × S^Mk</code> decomposition with one κ per factor on static
+      MNIST, Omniglot, Caltech 101 Silhouettes. Reproduce their static-MNIST result
+      (<code>S^40</code> −96.32 → 4-way product −92.65), then extend to ambient dimension 256–1024
+      with many factors. <code>k</code> factors means <code>k</code> simultaneous samplers with
+      different <code>(μ_j, κ_j)</code> — exactly the Gap A workload.</p>
+      <div class="badges"><span class="badge train">needs training</span><span class="badge">3–5 days</span><span class="badge gap">needs Gap A</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">C8</span><p class="exp-title">S-VGAE link prediction</p></div>
+      <p>Reproduce their Table 4 (Cora 92.7→94.1 AUC, Citeseer 90.3→94.7, Pubmed 97.1 vs 96.0). Then
+      close their loose end: <em>they omitted <code>d_z = 64</code> for S-VGAE because it ran out of
+      memory</em>, and Pubmed — the largest graph — is the one dataset where their method loses. Run
+      <code>d_z ∈ {64,128,256}</code> with the allocation-conscious in-place sampler and determine
+      whether the Pubmed loss is a capacity limit or the hyperspherical bottleneck.</p>
+      <div class="badges"><span class="badge train">needs training</span><span class="badge">~2 days</span><span class="badge pick">free win</span></div>
+    </div>
+  </div>
+
+  <h3>Group D — nGPT-flavored training experiments</h3>
+  <div class="exp-grid">
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">D1</span><p class="exp-title">vMF as an explicit output distribution</p></div>
+      <p>Replace nGPT's <code>s_z</code> with a properly parameterized vMF concentration, initialized
+      from the geometry via the estimator, and check whether its outsized sensitivity disappears.
+      <strong>Cheap precursor first, inference only, ~1 day:</strong> does
+      <code>mean(s_z) ≈ 60.8</code> match <code>κ̂</code> of the output embeddings at
+      <code>d_model = 1024</code>? Section 7 shows the test is well-conditioned.</p>
+      <div class="badges"><span class="badge infer">precursor: inference only</span><span class="badge train">full: needs training</span><span class="badge">1 day / 1–2 weeks</span><span class="badge pick">best lead</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">D2</span><p class="exp-title">Is the residual stream a vMF random walk?</p></div>
+      <p>Model the layer transition as <code>h_(ℓ+1) ~ vMF(h_ℓ, κ_ℓ)</code>, estimate
+      <code>κ_ℓ</code> from empirical transitions, and test whether it is determined by
+      <code>α_(A,ℓ)</code> and <code>α_(M,ℓ)</code> alone. If the fit holds, the result is a
+      generative surrogate of the entire forward pass as a vMF random walk with known per-layer
+      concentration — which can then be <em>sampled</em> to test how much of nGPT's behavior the walk
+      explains. <em>Precisely the explicit spherical distribution nGPT lacks.</em></p>
+      <div class="badges"><span class="badge infer">inference if checkpoints exist</span><span class="badge">~3 days</span><span class="badge pick">most interesting</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">D3</span><p class="exp-title">vMF-regularized embedding training</p></div>
+      <p>Penalize deviation of the embedding matrix's <code>κ̂</code> from a target — a differentiable
+      "hold embeddings at concentration <code>κ*</code>" regularizer requiring Gap B's Bessel-ratio
+      gradient. Compare against Wang &amp; Isola's uniformity loss, which is a Gaussian-kernel energy
+      rather than a directional likelihood. <code>κ* → 0</code> recovers uniformity; the open question
+      is whether a nonzero target, matching nGPT's own clustering observation, beats it.</p>
+      <div class="badges"><span class="badge train">needs training</span><span class="badge">~1 week</span><span class="badge gap">needs Gap B</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">D4</span><p class="exp-title">Eigen learning rates versus measured geometry</p></div>
+      <p>Train small nGPTs at several depths and contexts, and test whether learned
+      <code>α_A, α_M</code> are predictable from the per-layer <code>κ̂</code> trajectory of A2. They
+      report <code>α_A</code> 0.25→0.20 as depth goes 24→36. If a simple relation holds, the eigen
+      learning rates can be initialized or fixed from a cheap geometric measurement — and their own
+      Table 5 shows single scalars cost under 0.3%.</p>
+      <div class="badges"><span class="badge train">needs training</span><span class="badge">~1 week</span></div>
+    </div>
+    <div class="exp">
+      <div class="exp-head"><span class="exp-id">D5</span><p class="exp-title">Replicate the nGPT speedup at small scale</p></div>
+      <p>Prerequisite infrastructure for D1 and D4, at nanoGPT scale on OpenWebText at 1k context.
+      Be explicit about the caveat: the 4×/10×/20× figures are 0.5B/1B on 64 A100s, and the reported
+      60–80% per-step overhead means wall-clock gain is materially below token gain. Reproducing the
+      <em>ordering</em> is realistic; reproducing the <em>factors</em> is not.</p>
+      <div class="badges"><span class="badge train">needs training</span><span class="badge">~1 week</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="ordering">
+  <h2><span class="sec-n">10</span>Ordering</h2>
+  <div class="prose">
+    <p>Cheap and unblocking first, then inference-only science, then training runs.</p>
+    <ol class="steps">
+      <li><b>E1, E2</b> — no dependencies, strengthen the existing benchmark, and produce the null tables everything in groups A and B needs.</li>
+      <li><b>Gap A and Gap B</b> — 2–3 days total, unblock groups B, C, and D.</li>
+      <li><b>A1–A4</b> — inference-only, laptop scale, first real scientific output. A2 speaks most directly to nGPT.</li>
+      <li><b>C1, C3</b> — S-VAE validation harness and the sampler/estimator round trip.</li>
+      <li><b>E4, then C6</b> — settle vMF versus Power Spherical with the variance mechanism understood first. Most likely publishable single result.</li>
+      <li><b>C2</b> — extend the S-VAE past its reported dimension wall. Highest upside among the VAE items.</li>
+      <li><b>B1–B3</b> — inference-only robustness; B2 is the cleanest demonstration that the sampler and estimator compose.</li>
+      <li><b>E3</b> — the bias-corrected high-<code>p</code> estimator.</li>
+      <li><b>D1's precursor</b> — one day, and if <code>mean(s_z)</code> matches <code>κ̂</code> it is a striking bridge between the two papers.</li>
+      <li><b>B4, D2</b> — highest ambition and risk. B4 is where throughput is a precondition; D2 is where nGPT's missing spherical distribution gets supplied.</li>
+    </ol>
+  </div>
+</section>
+
+<section id="scope">
+  <h2><span class="sec-n">11</span>Scope and caveats</h2>
+  <div class="prose">
+    <p>
+      Stated plainly, because several of these bound how far the numbers above generalize.
+    </p>
+    <ul>
+      <li><strong>Single machine, CPU only.</strong> Every measurement is Apple M3 Max, float64, and the local CUSF build has <strong>no OpenMP</strong> because it is not installed — so the CUSF throughput figures are a floor, not a ceiling. A Linux benchmark should enable and report OpenMP explicitly rather than silently comparing thread configurations.</li>
+      <li><strong>CUDA is untested.</strong> The estimators are device-native and CUSF supplies a CUDA path, but no GPU measurement was taken. GPU throughput is only meaningful for large batches, and would need synchronization around the timed regions.</li>
+      <li><strong>float32 not swept.</strong> The benchmark supports it; only float64 was run. Subtracting two large nearby log-Bessel values and then forming the cancellation-sensitive Newton derivative is exactly the arithmetic that punishes low precision, so float32 behavior should not be assumed from these results.</li>
+      <li><strong>Sampler-cost rows are not the headline speedups.</strong> Repeated because it is easy to misread: those are small-batch M3 Max timings for this study's own data generation. The project's numbers of record remain 126.97× (NumPy) and 99.01× (Torch) at dimension 4096 from calibrated EPYC 7742 cluster runs.</li>
+      <li><strong>The reliability grid is bounded at n = 10⁵.</strong> Cells marked "&gt; 100,000" were not resolved, only excluded. E2 is what turns those into numbers.</li>
+      <li><strong>One tempting story does not hold.</strong> It would be neat if the S-VAE's reported collapse above <code>m ≈ 20</code> were a SciPy numerics artifact. It is not: underflow begins near order 511, i.e. <code>p ≈ 1024</code>, far above the dimensions they report. Section 3 explains why nobody has pushed past <code>m = 40</code>, not why 40 was already degrading.</li>
+      <li><strong>The nGPT arithmetic is a simulation, not a measurement.</strong> The κ̂ = 61.06 ± 0.15 figure comes from synthetic vMF data at <code>p = 1024</code>. It establishes that the test has adequate statistical power; it says nothing yet about what real nGPT embeddings do.</li>
+    </ul>
+  </div>
+</section>
+
+<footer class="report-foot">
+  <p><strong>Reproduce:</strong> <code>uv run python scripts/benchmark_kappa.py --tag &lt;name&gt;</code> then <code>uv run python scripts/analyze_kappa.py --tag &lt;name&gt; --output docs/kappa_benchmark_report.md</code>. Add <code>--study reliability</code> for section 5.</p>
+  <p><strong>Raw data:</strong> <code>measurements/kappa/*_m3max_cpu_fp64.csv</code> — population, sampled, timing, reliability, sampler-cost, plus rendered summaries and an environment record. Full experiment prose in <code>docs/experiment_roadmap.md</code>.</p>
+  <p><strong>Attribution:</strong> the closed form is Banerjee et al. (2005); Sra (2012) is that initialization plus exactly two Newton steps. Sibling report: <code>docs/benchmark_report.html</code> covers the sampler itself.</p>
+</footer>
+</div>
+
+</body>
+</html>
